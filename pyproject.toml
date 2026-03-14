@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mrv-lib"
+version = "0.0.2"
+authors = [
+  { name = "Kai Zheng", email = "kaizhengnz@gmail.com" },
+]
+description = "Market Regime Validity Library for Model Risk Governance"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Topic :: Office/Business :: Financial",
+]
+dependencies = [
+  "numpy",
+  "pandas",
+  "scipy",
+  "scikit-learn",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov", "black", "ruff"]
+
+[project.urls]
+Homepage = "https://mrv-lib.org"
+"Bug Tracker" = "https://github.com/modelguard-lab/mrv-lib/issues"
+Repository = "https://github.com/modelguard-lab/mrv-lib"
+
+[project.scripts]
+mrv-lib = "mrv_lib.core:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
