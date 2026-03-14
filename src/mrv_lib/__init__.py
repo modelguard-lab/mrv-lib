@@ -5,9 +5,14 @@ Model risk diagnostics in non-stationary markets — Representation Stability,
 Identifiability Boundaries, and Ordinal Robustness.
 """
 
-from mrv_lib.scan import Scanner, RepresentationTestResult
-from mrv_lib.boundary import detect_boundary, BoundaryResult
-from mrv_lib.metrics import ordinal_consistency
+from mrv_lib.core import (
+    BoundaryResult,
+    RepresentationTestResult,
+    Scanner,
+    detect_boundary,
+    ordinal_consistency,
+    ari_score,
+)
 
 __all__ = [
     "Scanner",
@@ -15,5 +20,6 @@ __all__ = [
     "detect_boundary",
     "BoundaryResult",
     "ordinal_consistency",
+    "ari_score",
 ]
-__version__ = "0.1.0"
+__version__ = "0.0.2"

@@ -14,17 +14,17 @@ Traditional market regime models often suffer from **"Stability Illusions."** A 
 
 ## Key Features
 
-### 1. `mrv_lib.scan` — Sensitivity Diagnostic
+### 1. Sensitivity Diagnostic (RSS)
 
 Automated stress-testing of regime labels across multiple feature sets (Representation) and temporal scales (Resolution). It calculates the **RSS (Representation Stability Score)** to quantify model robustness.
 
-### 2. `mrv_lib.boundary` — Identifiability Index
+### 2. Identifiability Index
 
-Calculates the **Identifiability Index** (\(\mathcal{I}\)) based on structural drift and regime separation. It identifies the "Phase Boundaries" where model inference begins to collapse.
+Calculates the **Identifiability Index** (\\(\mathcal{I}\\)) based on structural drift and regime separation. It identifies the "Phase Boundaries" where model inference begins to collapse.
 
-### 3. `mrv_lib.metrics` — Ordinal Robustness
+### 3. Ordinal Robustness
 
-When absolute labels (ARI) collapse, mrv-lib measures the **Ordinal Consistency** (Spearman's Rho) to determine if the risk ranking remains valid for fail-safe hedging.
+When absolute labels (ARI) collapse, mrv-lib measures **Ordinal Consistency** (Spearman's Rho) to determine if the risk ranking remains valid for fail-safe hedging.
 
 ## Installation
 
@@ -56,6 +56,28 @@ if boundary.is_collapsed:
     print(f"Warning: Entering Inference Collapse Zone. Identifiability Index: {boundary.index}")
 ```
 
+## Command-Line Interface
+
+After installation, you can run diagnostics from the shell:
+
+```bash
+mrv-lib market_data.csv --resolution 5m 1h 1d --model HMM
+```
+
+## Project Layout
+
+```
+mrv-lib/
+├── src/
+│   └── mrv_lib/
+│       ├── __init__.py
+│       └── core.py
+├── tests/
+├── README.md
+├── LICENSE
+└── pyproject.toml
+```
+
 ## Theoretical Foundation
 
 The methodology of mrv-lib is documented in a series of peer-reviewed research papers:
@@ -64,13 +86,13 @@ The methodology of mrv-lib is documented in a series of peer-reviewed research p
 - **Regime Labels Are Not Resolution-Invariant:** Documentation of the 14-hour lag in daily risk reporting.
 - **Inference Collapse and Ordinal Robustness:** Defining the phase boundaries of market state identification.
 
-For academic citations, please refer to our [Documentation](https://github.com/your-org/mrv-lib#documentation).
+For academic citations, please refer to the [documentation](https://github.com/modelguard-lab/mrv-lib#readme).
 
 ## Commercial Support & SaaS
 
 For enterprise-grade features including real-time alerting, Basel IV Compliance Reporting, and the Fail-Safe Actuator engine, please visit [ModelGuard.co.nz](https://modelguard.co.nz).
 
-- **MRV-Sentinel:** Real-time monitoring for institutional trading desks.
+- **ModelGuard Sentinel:** Real-time monitoring for institutional trading desks.
 - **ModelGuard Advisory:** Professional consulting for RBNZ/APRA regulatory alignment.
 
 ## Maintainers
