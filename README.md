@@ -14,7 +14,7 @@ mrv tests whether your market regime model produces **stable, reliable labels** 
 | ---- | -------- | ------ |
 | **Representation Invariance** | Do regime labels change when you use different risk factors? | v0.1.0 |
 | **Resolution Invariance** | Do labels agree across 5m / 1h / 1d frequencies? | v0.2.0 |
-| **Regime Stability Score** | A single score quantifying regime label stability across perturbations | v0.3.0 |
+| **RSS — Regime Stability Score** | A single score quantifying regime label stability across perturbations | v0.3.0 |
 
 ## Install
 
