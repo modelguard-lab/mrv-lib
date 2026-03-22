@@ -1,104 +1,163 @@
-# mrv-lib: Market Regime Validity Library
+# mrv-lib: Model Risk Validator
 
-**The Gold Standard for Model Risk Diagnostics in Non-Stationary Markets.**
+Regime model diagnostics for banks and financial institutions.
 
-mrv-lib is an open-source Python library designed to quantify and diagnose the stability of market regime identification models. Built upon the theoretical framework of **Inference Collapse** and **Ordinal Robustness**, it provides financial institutions with a rigorous toolset to meet Basel IV and SR 11-7 model risk governance requirements.
+mrv tests whether your market regime model produces **stable, reliable labels** — or whether they silently depend on undisclosed modelling choices like feature selection, temporal resolution, or rolling window parameters. Built for SR 11-7 / Basel IV model risk governance.
 
-## Why mrv-lib?
+## What it does
 
-Traditional market regime models often suffer from **"Stability Illusions."** A model may appear robust at daily resolutions but fail to capture structural shifts during high-frequency intraday stress events. mrv-lib exposes these vulnerabilities by measuring:
+| Test | Question | Status |
+| ---- | -------- | ------ |
+| **Representation Invariance** | Do regime labels change when you use different risk factors? | Implemented |
+| **Resolution Invariance** | Do labels agree across 5m / 1h / 1d frequencies? | Planned |
+| **Temporal Stability** | Do labels persist across rolling windows? | Planned |
 
-- **Representation Sensitivity:** How sensitive are your regime labels to feature engineering and preprocessing?
-- **Resolution Dissonance:** Does your model's daily output contradict its high-frequency signals?
-- **Identifiability Boundaries:** Is the market currently in a "Zone of Collapse" where absolute labels are mathematically unreliable?
-
-## Key Features
-
-### 1. Sensitivity Diagnostic (RSS)
-
-Automated stress-testing of regime labels across multiple feature sets (Representation) and temporal scales (Resolution). It calculates the **RSS (Representation Stability Score)** to quantify model robustness.
-
-### 2. Identifiability Index
-
-Calculates the **Identifiability Index** (\\(\mathcal{I}\\)) based on structural drift and regime separation. It identifies the "Phase Boundaries" where model inference begins to collapse.
-
-### 3. Ordinal Robustness
-
-When absolute labels (ARI) collapse, mrv-lib measures **Ordinal Consistency** (Spearman's Rho) to determine if the risk ranking remains valid for fail-safe hedging.
-
-## Installation
+## Install
 
 ```bash
 pip install mrv-lib
+
+# Optional: IB data download
+pip install mrv-lib[ib]
+
+# Optional: regime models (GMM/HMM)
+pip install mrv-lib[validator]
+
+# Everything
+pip install mrv-lib[all]
 ```
 
-## Quick Start
-
-```python
-import mrv_lib as mrv
-import pandas as pd
-
-# Load your market data (OHLCV)
-data = pd.read_csv("market_data.csv")
-
-# Initialize the diagnostic scanner
-scanner = mrv.Scanner(resolution=['5m', '1h', '1d'])
-
-# Run representation stability test
-results = scanner.run_representation_test(data, model="HMM")
-
-# Get the RSS (Representation Stability Score)
-print(f"Model RSS: {results.rss_score}")
-
-# Detect Identifiability Boundaries
-boundary = mrv.detect_boundary(data)
-if boundary.is_collapsed:
-    print(f"Warning: Entering Inference Collapse Zone. Identifiability Index: {boundary.index}")
-```
-
-## Command-Line Interface
-
-After installation, you can run diagnostics from the shell:
+## Quick start
 
 ```bash
-mrv-lib market_data.csv --resolution 5m 1h 1d --model HMM
+# 1. Download data (requires IB Gateway running)
+python run.py download config.yaml
+
+# 2. Run representation invariance test + generate PDF
+python run.py run config.yaml rep
+
+# 3. Regenerate PDF from existing results
+python run.py report
 ```
 
-## Project Layout
+Or from Python:
 
+```python
+from mrv.pipeline import run, download
+
+download("config.yaml")             # fetch data from IB
+run("config.yaml", "rep")           # validate + PDF
+
+# Step by step (full control)
+from mrv.pipeline import load_data, compute_factors, fit_labels, validate, report
+
+cfg = load("config.yaml")
+prices = load_data(cfg, "rep")
+# ... user can replace any step
 ```
+
+## Configuration
+
+All settings in one `config.yaml`:
+
+```yaml
+download:
+  data_dir: data
+  symbols: [SPY, USDJPY, CL=F, IEF, GLD]
+  freq: [5m, 15m, 1h, 1d]
+  start: "2026-01-01"
+  ib:
+    host: 127.0.0.1
+    port: 4002
+
+validator:
+  rep:
+    assets:
+      SPY: data/SPY_5m.csv
+      CL:  data/CL_5m.csv
+    model: gmm
+    factors:
+      - [vol, drawdown, maxdd, var, cvar]
+      - [vol, drawdown, var, cvar]
+      - [real_skew, vol_stab, var, cvar]
+```
+
+## Custom factors and models
+
+```python
+from mrv.data.factors import register_factor
+
+def momentum(returns, price, windows):
+    return price.pct_change(windows.get("mom_window", 20)).rename("momentum")
+
+register_factor("momentum", momentum)
+```
+
+```python
+from mrv.models import register_model
+
+def my_kmeans(features, n_states, **kwargs):
+    from sklearn.cluster import KMeans
+    return KMeans(n_clusters=n_states).fit_predict(features.values)
+
+register_model("kmeans", my_kmeans)
+```
+
+## Project layout
+
+```text
 mrv-lib/
-├── src/
-│   └── mrv_lib/
-│       ├── __init__.py
-│       └── core.py
-├── tests/
-├── README.md
-├── LICENSE
-└── pyproject.toml
+├── config.yaml              # Configuration
+├── run.py                   # CLI entry point
+├── templates/
+│   └── template.tex         # LaTeX report template
+├── src/mrv/
+│   ├── pipeline.py          # data → factors → model → validate → report
+│   ├── data/
+│   │   ├── reader.py        # Load, validate, resample OHLCV
+│   │   ├── factors.py       # Factor registry + built-in risk factors
+│   │   └── normalize.py     # Rolling z-score, min-max
+│   ├── models/
+│   │   ├── __init__.py      # Model registry + fit()
+│   │   ├── gmm.py           # Gaussian Mixture Model
+│   │   └── hmm.py           # Hidden Markov Model
+│   ├── validator/
+│   │   ├── base.py          # BaseValidator (subclass for custom tests)
+│   │   ├── rep.py           # Representation Invariance test
+│   │   ├── metrics.py       # ARI, AMI, NMI, Spearman, VI
+│   │   └── report.py        # JSON → LaTeX → PDF
+│   └── utils/
+│       ├── config.py        # YAML config loading
+│       ├── download.py      # IB data download
+│       └── log.py           # Logging setup
+├── reports/                  # Output (gitignored)
+│   └── mrv_report_YYYYMMDD_rep/
+│       ├── result.json
+│       ├── report.pdf
+│       └── {asset}.png
+└── tests/
 ```
 
-## Theoretical Foundation
+## Output
 
-The methodology of mrv-lib is documented in a series of peer-reviewed research papers:
+Each run creates a timestamped directory under `reports/`:
 
-- **Regime Labels Are Not Representation-Invariant:** Evidence of instability across feature sets.
-- **Regime Labels Are Not Resolution-Invariant:** Documentation of the 14-hour lag in daily risk reporting.
-- **Inference Collapse and Ordinal Robustness:** Defining the phase boundaries of market state identification.
+- **result.json** — Complete data (reusable for report regeneration)
+- **report.pdf** — Professional report with cover page, dashboard, heatmaps, and remediation plan
+- **summary.txt** — Plain text quick view
+- **{asset}.png** — ARI heatmap per asset
 
-For academic citations, please refer to the [documentation](https://github.com/modelguard-lab/mrv-lib#readme).
+## Research
 
-## Commercial Support & SaaS
+Based on the following PhD research:
 
-For enterprise-grade features including real-time alerting, Basel IV Compliance Reporting, and the Fail-Safe Actuator engine, please visit [ModelGuard.co.nz](https://modelguard.co.nz).
-
-- **ModelGuard Sentinel:** Real-time monitoring for institutional trading desks.
-- **ModelGuard Advisory:** Professional consulting for RBNZ/APRA regulatory alignment.
-
-## Maintainers
-
-Maintained by **ModelGuard Lab**. Lead Architect: **Kai Zheng**.
+- Zheng, Low & Wang (2026). *Regime Labels Are Not Representation-Invariant*. Finance Research Letters.
+- Zheng, Low & Wang (2026). *Regime Labels Are Not Resolution-Invariant*. Working paper.
 
 ## License
 
-mrv-lib is released under the **MIT License**. See [LICENSE](LICENSE) for details.
+MIT. See [LICENSE](LICENSE).
+
+## Maintainers
+
+[ModelGuard Lab](https://github.com/modelguard-lab) — Author: Kai Zheng.
