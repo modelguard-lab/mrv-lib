@@ -1,8 +1,14 @@
 """Tests for mrv-lib: factors, normalize, reader, config, log, download, metrics, models, report."""
 
+import importlib
+
 import numpy as np
 import pandas as pd
 import pytest
+
+
+def _has_hmmlearn() -> bool:
+    return importlib.util.find_spec("hmmlearn") is not None
 
 
 # ---------------------------------------------------------------------------
@@ -412,6 +418,9 @@ class TestModels:
         X = pd.DataFrame(np.random.randn(5, 2), columns=["a", "b"])
         assert fit_gmm(X, n_states=3) is None
 
+    @pytest.mark.skipif(
+        not _has_hmmlearn(), reason="hmmlearn not installed"
+    )
     def test_fit_hmm(self):
         from mrv.models.hmm import fit_hmm
         np.random.seed(42)
@@ -421,6 +430,9 @@ class TestModels:
         assert len(labels) == 200
         assert set(labels).issubset({0, 1})
 
+    @pytest.mark.skipif(
+        not _has_hmmlearn(), reason="hmmlearn not installed"
+    )
     def test_fit_hmm_insufficient_data(self):
         from mrv.models.hmm import fit_hmm
         X = pd.DataFrame(np.random.randn(5, 2), columns=["a", "b"])
