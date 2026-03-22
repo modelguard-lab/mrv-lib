@@ -1,6 +1,10 @@
 # mrv-lib: Model Risk Validator
 
-Regime model diagnostics for banks and financial institutions.
+[![CI](https://github.com/modelguard-lab/mrv-lib/actions/workflows/ci.yml/badge.svg)](https://github.com/modelguard-lab/mrv-lib/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/mrv-lib)](https://pypi.org/project/mrv-lib/)
+[![Python](https://img.shields.io/pypi/pyversions/mrv-lib)](https://pypi.org/project/mrv-lib/)
+
+**Your regime model might be producing different risk labels depending on which features you feed it — and your current validation doesn't catch this.** Most regime models (GMM, HMM) are validated on in-sample fit, but nobody checks whether the labels survive a change in input representation. If they don't, downstream risk decisions are sitting on an arbitrary modelling choice. mrv-lib tests for this.
 
 mrv tests whether your market regime model produces **stable, reliable labels** — or whether they silently depend on undisclosed modelling choices like feature selection, temporal resolution, or rolling window parameters. Built for SR 11-7 / Basel IV model risk governance.
 
@@ -8,9 +12,9 @@ mrv tests whether your market regime model produces **stable, reliable labels** 
 
 | Test | Question | Status |
 | ---- | -------- | ------ |
-| **Representation Invariance** | Do regime labels change when you use different risk factors? | Implemented |
-| **Resolution Invariance** | Do labels agree across 5m / 1h / 1d frequencies? | Planned |
-| **Temporal Stability** | Do labels persist across rolling windows? | Planned |
+| **Representation Invariance** | Do regime labels change when you use different risk factors? | v0.1.0 |
+| **Resolution Invariance** | Do labels agree across 5m / 1h / 1d frequencies? | v0.2.0 |
+| **Temporal Stability** | Do labels persist across rolling windows? | v0.3.0 |
 
 ## Install
 
