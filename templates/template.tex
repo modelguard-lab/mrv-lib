@@ -1,0 +1,363 @@
+% MRV -- Model Risk Validation Report
+% All text lives here. report.py only substitutes data values.
+%
+% Placeholders: {{KEY}} — replaced with data from JSON
+% Conditionals: %% IF_xxx ... %% ELSE ... %% ENDIF — selected by report.py
+% Asset block:  %% BEGIN_ASSET ... %% END_ASSET — repeated per asset
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{hyperref}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{amsmath}
+\usepackage{colortbl}
+\usepackage{tabularx}
+\usepackage{tikz}
+
+\definecolor{mrvblue}{RGB}{0,51,102}
+\definecolor{mrvgray}{RGB}{100,100,100}
+\definecolor{mrvlightgray}{RGB}{240,240,240}
+\definecolor{mrvred}{RGB}{180,30,30}
+\definecolor{mrvgreen}{RGB}{30,120,50}
+\definecolor{mrvredbg}{RGB}{253,235,235}
+\definecolor{mrvgreenbg}{RGB}{232,248,237}
+
+\newcommand{\statuspass}{\tikz\draw[fill=mrvgreen,draw=none] (0,0) circle (0.35em); \textcolor{mrvgreen}{\textbf{PASS}}}
+\newcommand{\statusfail}{\tikz\draw[fill=mrvred,draw=none] (0,0) circle (0.35em); \textcolor{mrvred}{\textbf{FAIL}}}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{mrvgray}MRV --- Model Risk Validation Report}
+\fancyhead[R]{\small\color{mrvgray}{{DATE}}}
+\fancyfoot[L]{\footnotesize\color{mrvgray}CONFIDENTIAL \enspace$\cdot$\enspace \href{https://github.com/modelguard-lab/mrv-lib}{mrv-lib}}
+\fancyfoot[R]{\small\color{mrvgray}\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.2pt}
+
+\titleformat{\section}{\large\bfseries\color{mrvblue}}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalsize\bfseries\color{mrvblue}}{\thesubsection}{1em}{}
+\hypersetup{colorlinks=true, linkcolor=mrvblue, urlcolor=mrvblue}
+
+\begin{document}
+
+% =====================================================================
+% COVER
+% =====================================================================
+\begin{titlepage}
+\centering
+\vspace*{2cm}
+
+{\Huge\bfseries\color{mrvblue} Model Risk Validation Report}\\[0.6cm]
+{\LARGE Representation Invariance Assessment}\\[1.5cm]
+
+%% IF_PARTITION_PASS
+\fcolorbox{mrvgreen}{mrvgreenbg}{%
+  \parbox{0.7\textwidth}{\centering
+    \vspace{0.4cm}
+    {\Large\textbf{Partition Stability:} \statuspass}\\[0.2cm]
+    {\large Mean ARI = {{OVERALL_MEAN_ARI}} \quad ($\geq$ {{ARI_THRESHOLD}})}
+    \vspace{0.4cm}
+  }%
+}
+%% ELSE
+\fcolorbox{mrvred}{mrvredbg}{%
+  \parbox{0.7\textwidth}{\centering
+    \vspace{0.4cm}
+    {\Large\textbf{Partition Stability:} \statusfail}\\[0.2cm]
+    {\large Mean ARI = {{OVERALL_MEAN_ARI}} \quad ($<$ {{ARI_THRESHOLD}})}
+%% IF_ORDERING_PASS
+    \\[0.4cm]
+    {\Large\textbf{Ordering Stability:} \statuspass}\\[0.2cm]
+    {\large Mean Spearman = {{OVERALL_MEAN_SPEARMAN}} \quad ($\geq$ {{SPEARMAN_THRESHOLD}})}
+%% ENDIF
+    \vspace{0.4cm}
+  }%
+}
+%% ENDIF
+
+\vspace{1.5cm}
+
+\begin{tabular}{ll}
+\toprule
+\textbf{Date}       & {{DATE}} \\
+\textbf{Scope}      & {{ASSET_LIST}} --- representation stability \\
+\textbf{Model}      & {{MODEL}} ($K = {{N_STATES}}$) \\
+\textbf{Period}     & {{DATE_RANGE}} \\
+\textbf{Framework}  & SR 11-7 / Basel IV FRTB \\
+\bottomrule
+\end{tabular}
+
+\vspace{2cm}
+
+\begin{tabular}{p{4.5cm}p{4.5cm}p{4.5cm}}
+\toprule
+\textbf{Prepared by} & \textbf{Reviewed by} & \textbf{Approved by} \\
+\midrule
+& & \\[1.2cm]
+\dotfill & \dotfill & \dotfill \\
+Name & Name & Name \\
+Date: \dotfill & Date: \dotfill & Date: \dotfill \\
+\bottomrule
+\end{tabular}
+
+\vfill
+{\footnotesize\color{mrvgray} CONFIDENTIAL --- For internal risk management use only.}
+\end{titlepage}
+
+
+\tableofcontents
+\newpage
+
+
+% =====================================================================
+% 1. DASHBOARD
+% =====================================================================
+\section{Dashboard}
+
+\noindent
+At-a-glance results for all assets under the representation invariance check.
+A \statuspass{} requires mean cross-representation ARI at or above the 0.65
+threshold established by Steinley (2004) as the minimum for acceptable
+cluster recovery quality.
+
+\vspace{0.5cm}
+{{DASHBOARD_TABLE}}
+
+\vspace{0.3cm}
+\noindent
+%% IF_PARTITION_FAIL_ORDERING_PASS
+\textbf{Key finding:} Categorical regime labels are \textbf{not stable}
+across feature representations (ARI below {{ARI_THRESHOLD}}). However, coarse
+\textbf{risk ordering is preserved} (Spearman above {{SPEARMAN_THRESHOLD}}), meaning
+ordinal risk signals remain reliable even when exact state boundaries shift.
+%% ELIF_PARTITION_FAIL
+\textbf{Key finding:} Both partition labels and risk ordering are unstable
+across representations. Regime model outputs should not be used for
+risk decisions without further investigation.
+%% ELSE
+\textbf{Key finding:} Regime labels show acceptable stability
+across feature representations at both partition and ordering levels.
+%% ENDIF
+
+
+% =====================================================================
+% 2. EXECUTIVE SUMMARY
+% =====================================================================
+\section{Executive Summary}
+
+\subsection{What was tested}
+We tested whether the regime labels produced by a {{MODEL}} ($K={{N_STATES}}$)
+model remain consistent when the input features are changed.
+The following economically reasonable feature sets were compared:
+
+{{FACTOR_SETS}}
+
+\subsection{What we found}
+\begin{enumerate}[leftmargin=2em]
+%% IF_PARTITION_FAIL
+\item \textbf{Regime labels are unstable.} The same observation window can be
+      classified differently under different feature sets. Mean ARI across
+      all assets is {{OVERALL_MEAN_ARI}}, below the {{ARI_THRESHOLD}} threshold
+      (Steinley 2004).
+%% ELSE
+\item \textbf{Partition stability: PASS.} Mean ARI = {{OVERALL_MEAN_ARI}}
+      ($\geq$ {{ARI_THRESHOLD}}).
+%% ENDIF
+%% IF_ORDERING_PASS
+\item \textbf{Risk ordering is stable.} Despite label instability, the
+      ranking of states from lowest to highest risk is consistent across
+      representations (mean Spearman = {{OVERALL_MEAN_SPEARMAN}},
+      $\geq$ {{SPEARMAN_THRESHOLD}}).
+      The ordinal signal (``which state is riskiest?'') survives; the
+      categorical signal (``which state are we in?'') does not.
+%% ELSE
+\item \textbf{Risk ordering is also unstable.} Mean Spearman =
+      {{OVERALL_MEAN_SPEARMAN}} ($<$ {{SPEARMAN_THRESHOLD}}).
+%% ENDIF
+\end{enumerate}
+
+\subsection{What should be done}
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{c X l}
+\toprule
+\textbf{\#} & \textbf{Action} & \textbf{Priority} \\
+\midrule
+1 & Run regime inference with $\geq$3 feature sets; flag disagreement. & High \\
+2 & Migrate from categorical labels to ordinal risk scores. & High \\
+3 & Add representation sensitivity to model risk disclosures (SR 11-7). & Medium \\
+4 & Schedule quarterly re-validation. & Medium \\
+\bottomrule
+\end{tabularx}
+\caption{Recommended actions.}
+\end{table}
+
+
+% =====================================================================
+% 3. METHODOLOGY
+% =====================================================================
+\section{Methodology}
+
+A Gaussian Mixture Model with $K={{N_STATES}}$ states is fitted independently on
+each feature set via Expectation--Maximization (seed = 42). Labels
+are assigned by maximum posterior probability. Agreement between
+label sequences is measured by the Adjusted Rand Index (ARI,
+Hubert \& Arabie 1985), which is permutation-invariant and corrected
+for chance.
+
+\medskip\noindent
+Following Steinley (2004), ARI $\geq$ 0.90 indicates excellent recovery,
+ARI $\geq$ 0.65 indicates acceptable recovery, and
+ARI $<$ 0.65 signals material representation dependence.
+
+\medskip\noindent
+All features are computed from log returns and normalized via rolling
+$z$-score (120-bar lookback) to ensure comparability across representations.
+
+
+% =====================================================================
+% 4. RESULTS BY ASSET
+% =====================================================================
+\section{Results by Asset}
+
+%% BEGIN_ASSET
+\subsection{{{ASSET_NAME}}}
+
+\begin{minipage}[t]{0.48\textwidth}
+\begin{table}[H]
+\centering
+\caption{Pairwise ARI --- {{ASSET_NAME}}}
+{{ARI_TABLE}}
+\end{table}
+
+\vspace{0.3cm}
+\begin{table}[H]
+\centering
+\caption{Summary --- {{ASSET_NAME}}}
+\begin{tabular}{ll}
+\toprule
+Observations  & {{N_OBS}} \\
+Factor sets   & {{N_FACTOR_SETS}} \\
+Mean ARI      & \textcolor{{{ARI_COLOR}}}{\textbf{{{MEAN_ARI}}}} \\
+Min ARI       & {{MIN_ARI}} \\
+Spearman      & {{MEAN_SPEARMAN}} \\
+\bottomrule
+\end{tabular}
+\end{table}
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.48\textwidth}
+\vspace{0pt}
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{{{HEATMAP_FILE}}}
+\caption{ARI heatmap --- {{ASSET_NAME}}}
+\end{figure}
+\end{minipage}
+
+\vspace{0.3cm}
+\noindent
+{{FINDING_TEXT}}
+
+%% END_ASSET
+
+
+% =====================================================================
+% 5. CONCLUSION
+% =====================================================================
+\newpage
+\section{Conclusion \& Recommendations}
+
+\subsection{Risk statement}
+
+%% IF_PARTITION_FAIL_ORDERING_PASS
+The regime model under review ({{MODEL}}, $K={{N_STATES}}$) produces
+\textbf{partition labels that are materially representation-dependent}
+(mean ARI = {{OVERALL_MEAN_ARI}}, below {{ARI_THRESHOLD}}).
+However, \textbf{coarse risk ordering is stable}
+(mean Spearman = {{OVERALL_MEAN_SPEARMAN}}, above {{SPEARMAN_THRESHOLD}}).
+Risk managers should not rely on categorical state labels for trading
+decisions, but ordinal risk scores (``risk is elevated'') remain defensible.
+%% ELIF_PARTITION_FAIL
+The regime model ({{MODEL}}, $K={{N_STATES}}$) produces labels that are
+\textbf{materially dependent on feature representation} at both
+partition and ordering levels. Regime-based signals should be suspended
+pending further investigation.
+%% ELSE
+The regime model ({{MODEL}}, $K={{N_STATES}}$) produces labels with acceptable
+cross-representation stability (mean ARI = {{OVERALL_MEAN_ARI}}).
+%% ENDIF
+
+As required by the Federal Reserve's SR 11-7 guidance on model risk
+management, this representation sensitivity constitutes a material model
+risk that should be disclosed and mitigated.
+
+\subsection{Recommended actions}
+
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{c X l}
+\toprule
+\textbf{\#} & \textbf{Action} & \textbf{Priority} \\
+\midrule
+1 & Run regime inference with $\geq$3 feature sets; flag disagreement. & High \\
+2 & Migrate from categorical labels to ordinal risk scores. & High \\
+3 & Add representation sensitivity to model risk disclosures (SR 11-7). & Medium \\
+4 & Schedule quarterly re-validation. & Medium \\
+\bottomrule
+\end{tabularx}
+\caption{Remediation plan.}
+\end{table}
+
+
+% =====================================================================
+% APPENDIX
+% =====================================================================
+\newpage
+\appendix
+
+\section{Data Lineage}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Item} & \textbf{Detail} \\
+\midrule
+Data source     & Interactive Brokers (5-minute OHLCV bars) \\
+Returns         & Log returns: $r_t = \log(P_t / P_{t-1})$ \\
+Normalization   & Rolling $z$-score, 120-bar lookback \\
+Missing values  & Excluded mechanically (warm-up period) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Software \& Reproducibility}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Item} & \textbf{Detail} \\
+\midrule
+Software        & mrv-lib (Model Risk Validator) \\
+Random seed     & 42 \\
+ARI threshold   & {{ARI_THRESHOLD}} (Steinley 2004) \\
+Config file     & \texttt{config.yaml} (attached) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\end{document}

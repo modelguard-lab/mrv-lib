@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mrv-lib"
-version = "0.0.2"
+version = "0.2.0"
 authors = [
   { name = "Kai Zheng", email = "kaizhengnz@gmail.com" },
 ]
-description = "Market Regime Validity Library for Model Risk Governance"
+description = "Model Risk Validator for Model Risk Governance"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = "MIT"
 classifiers = [
   "Programming Language :: Python :: 3",
@@ -20,23 +20,29 @@ classifiers = [
 dependencies = [
   "numpy",
   "pandas",
-  "scipy",
-  "scikit-learn",
+  "pyyaml",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "black", "ruff"]
+ib = ["ib_insync"]
+validator = ["scikit-learn", "hmmlearn", "scipy", "matplotlib"]
+dev = ["pytest", "pytest-cov", "black", "ruff", "scikit-learn", "scipy", "matplotlib"]
+all = ["ib_insync", "scikit-learn", "hmmlearn", "scipy", "matplotlib"]
 
 [project.urls]
 Homepage = "https://mrv-lib.org"
 "Bug Tracker" = "https://github.com/modelguard-lab/mrv-lib/issues"
 Repository = "https://github.com/modelguard-lab/mrv-lib"
 
-[project.scripts]
-mrv-lib = "mrv_lib.core:main"
+# CLI entry: use `python run.py` directly (run.py is not a package module)
+# [project.scripts]
+# mrv = "mrv.cli:main"  # uncomment when cli.py is restored
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+mrv = ["../../config.yaml"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
