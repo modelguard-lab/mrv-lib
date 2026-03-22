@@ -33,6 +33,8 @@ pip install mrv-lib[all]
 
 ## Quick start
 
+> **Notebook:** See [`examples/quickstart.ipynb`](examples/quickstart.ipynb) for a step-by-step walkthrough with synthetic data — no IB connection needed.
+
 ```bash
 # 1. Download data (requires IB Gateway running)
 python run.py download config.yaml
