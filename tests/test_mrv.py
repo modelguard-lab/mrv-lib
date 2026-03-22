@@ -1,4 +1,4 @@
-"""Tests for mrv-lib: factors, normalize, reader, config, log, download."""
+"""Tests for mrv-lib: factors, normalize, reader, config, log, download, metrics, models, report."""
 
 import numpy as np
 import pandas as pd
@@ -318,3 +318,340 @@ class TestLoadDaily:
         price = load_daily(csv_path)
         assert len(price) == 50
         assert price.name == "test_daily"
+
+
+# ---------------------------------------------------------------------------
+# metrics
+# ---------------------------------------------------------------------------
+
+class TestMetrics:
+    def test_ari_identical(self):
+        from mrv.validator.metrics import ari
+        labels = np.array([0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2])
+        assert ari(labels, labels) == pytest.approx(1.0)
+
+    def test_ari_random(self):
+        from mrv.validator.metrics import ari
+        np.random.seed(42)
+        a = np.random.randint(0, 3, 200)
+        b = np.random.randint(0, 3, 200)
+        result = ari(a, b)
+        assert -0.1 < result < 0.2  # random labels ~ 0
+
+    def test_ari_too_few_samples(self):
+        from mrv.validator.metrics import ari
+        a = np.array([0, 1, 2])
+        b = np.array([0, 1, 2])
+        assert np.isnan(ari(a, b))
+
+    def test_ari_different_lengths(self):
+        from mrv.validator.metrics import ari
+        a = np.array([0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2])
+        b = np.array([0, 1, 2, 0, 1, 2, 0, 1, 2, 0])
+        result = ari(a, b)
+        assert result == pytest.approx(1.0)
+
+    def test_ami(self):
+        from mrv.validator.metrics import ami
+        labels = np.array([0, 0, 1, 1, 2, 2, 0, 0, 1, 1])
+        assert ami(labels, labels) == pytest.approx(1.0)
+
+    def test_nmi(self):
+        from mrv.validator.metrics import nmi
+        labels = np.array([0, 0, 1, 1, 2, 2, 0, 0, 1, 1])
+        assert nmi(labels, labels) == pytest.approx(1.0)
+
+    def test_variation_of_information_identical(self):
+        from mrv.validator.metrics import variation_of_information
+        labels = np.array([0, 1, 2, 0, 1, 2, 0, 1, 2, 0])
+        assert variation_of_information(labels, labels) == pytest.approx(0.0, abs=1e-10)
+
+    def test_variation_of_information_different(self):
+        from mrv.validator.metrics import variation_of_information
+        a = np.array([0, 0, 0, 0, 0, 1, 1, 1, 1, 1])
+        b = np.array([0, 1, 0, 1, 0, 1, 0, 1, 0, 1])
+        assert variation_of_information(a, b) > 0
+
+    def test_ordering_consistency_identical(self):
+        from mrv.validator.metrics import ordering_consistency
+        np.random.seed(42)
+        features = np.random.randn(100)
+        labels = (features > 0).astype(int)
+        result = ordering_consistency(labels, labels, features)
+        assert result == pytest.approx(1.0)
+
+    def test_ordering_consistency_too_few(self):
+        from mrv.validator.metrics import ordering_consistency
+        a = np.array([0, 1, 2])
+        b = np.array([0, 1, 2])
+        f = np.array([1.0, 2.0, 3.0])
+        assert np.isnan(ordering_consistency(a, b, f))
+
+    def test_thresholds_exported(self):
+        from mrv.validator.metrics import ARI_THRESHOLD, SPEARMAN_THRESHOLD
+        assert ARI_THRESHOLD == 0.65
+        assert SPEARMAN_THRESHOLD == 0.85
+
+
+# ---------------------------------------------------------------------------
+# models
+# ---------------------------------------------------------------------------
+
+class TestModels:
+    def test_fit_gmm(self):
+        from mrv.models.gmm import fit_gmm
+        np.random.seed(42)
+        X = pd.DataFrame(np.random.randn(200, 3), columns=["a", "b", "c"])
+        labels = fit_gmm(X, n_states=3)
+        assert labels is not None
+        assert len(labels) == 200
+        assert set(labels).issubset({0, 1, 2})
+
+    def test_fit_gmm_insufficient_data(self):
+        from mrv.models.gmm import fit_gmm
+        X = pd.DataFrame(np.random.randn(5, 2), columns=["a", "b"])
+        assert fit_gmm(X, n_states=3) is None
+
+    def test_fit_hmm(self):
+        from mrv.models.hmm import fit_hmm
+        np.random.seed(42)
+        X = pd.DataFrame(np.random.randn(200, 3), columns=["a", "b", "c"])
+        labels = fit_hmm(X, n_states=2)
+        assert labels is not None
+        assert len(labels) == 200
+        assert set(labels).issubset({0, 1})
+
+    def test_fit_hmm_insufficient_data(self):
+        from mrv.models.hmm import fit_hmm
+        X = pd.DataFrame(np.random.randn(5, 2), columns=["a", "b"])
+        assert fit_hmm(X, n_states=3) is None
+
+    def test_model_registry(self):
+        from mrv.models import fit
+        np.random.seed(42)
+        X = pd.DataFrame(np.random.randn(100, 2), columns=["a", "b"])
+        # Built-in gmm should work
+        labels = fit(X, model="gmm", n_states=2)
+        assert labels is not None
+
+    def test_model_registry_unknown(self):
+        from mrv.models import fit
+        X = pd.DataFrame(np.random.randn(50, 2), columns=["a", "b"])
+        with pytest.raises(ValueError, match="Unknown model"):
+            fit(X, model="nonexistent")
+
+    def test_register_custom_model(self):
+        from mrv.models import fit, register_model
+
+        def dummy_model(features, n_states=2, **kwargs):
+            return np.zeros(len(features), dtype=int)
+
+        register_model("dummy", dummy_model)
+        X = pd.DataFrame(np.random.randn(50, 2), columns=["a", "b"])
+        labels = fit(X, model="dummy", n_states=2)
+        assert (labels == 0).all()
+
+
+# ---------------------------------------------------------------------------
+# factor registry
+# ---------------------------------------------------------------------------
+
+class TestFactorRegistry:
+    def test_resolve_aliases(self):
+        from mrv.data.factors import resolve_name
+        assert resolve_name("vol") == "volatility"
+        assert resolve_name("maxdd") == "max_drawdown_window"
+        assert resolve_name("real_skew") == "realized_skew"
+        assert resolve_name("vol_stab") == "stability"
+        assert resolve_name("unknown") == "unknown"
+
+    def test_register_custom_factor(self):
+        from mrv.data.factors import register_factor, build_factors
+        def momentum(returns, price, windows):
+            return price.pct_change(windows.get("mom_window", 20)).rename("momentum")
+        register_factor("momentum", momentum)
+        p = _price_series(100)
+        df = build_factors(p, factors=["momentum"])
+        assert "momentum" in df.columns
+
+    def test_build_factors_unknown_skipped(self):
+        from mrv.data.factors import build_factors
+        p = _price_series(100)
+        df = build_factors(p, factors=["volatility", "nonexistent_factor"])
+        assert "volatility" in df.columns
+        assert len(df.columns) == 1
+
+    def test_build_factors_default(self):
+        from mrv.data.factors import build_factors, DEFAULT_FACTORS
+        p = _price_series(300)
+        df = build_factors(p)
+        assert len(df.columns) == len(DEFAULT_FACTORS)
+
+
+# ---------------------------------------------------------------------------
+# normalize extended
+# ---------------------------------------------------------------------------
+
+class TestNormalizeExtended:
+    def test_normalize_with_config(self):
+        from mrv.data.normalize import normalize
+        df = pd.DataFrame({"a": np.random.randn(200)})
+        cfg = {"normalize": {"mode": "minmax", "window": 50}}
+        result = normalize(df, cfg=cfg)
+        valid = result.iloc[50:].dropna()
+        assert (valid >= 0).all().all()
+        assert (valid <= 1).all().all()
+
+    def test_normalize_unknown_mode(self):
+        from mrv.data.normalize import normalize
+        df = pd.DataFrame({"a": np.random.randn(200)})
+        with pytest.raises(ValueError, match="Unknown normalization mode"):
+            normalize(df, mode="invalid_mode")
+
+    def test_rolling_zscore_constant_column(self):
+        from mrv.data.normalize import rolling_zscore
+        df = pd.DataFrame({"a": np.ones(200)})
+        result = rolling_zscore(df, window=50)
+        # Constant column has std=0 -> NaN (division by zero guard)
+        assert result.iloc[50:].isna().all().all()
+
+
+# ---------------------------------------------------------------------------
+# reader extended
+# ---------------------------------------------------------------------------
+
+class TestReaderExtended:
+    def test_validate_ohlcv_missing_column(self):
+        from mrv.data.reader import validate_ohlcv
+        df = pd.DataFrame({"Open": [1], "High": [2], "Low": [1]})
+        issues = validate_ohlcv(df)
+        assert any("Close" in i for i in issues)
+
+    def test_validate_ohlcv_empty(self):
+        from mrv.data.reader import validate_ohlcv
+        df = pd.DataFrame(columns=["Open", "High", "Low", "Close"])
+        issues = validate_ohlcv(df)
+        assert any("empty" in i for i in issues)
+
+    def test_validate_ohlcv_duplicate_timestamps(self):
+        from mrv.data.reader import validate_ohlcv
+        df = _ohlcv_df(10)
+        df.index = [df.index[0]] * 10  # all same timestamp
+        issues = validate_ohlcv(df)
+        assert any("duplicate" in i for i in issues)
+
+    def test_resample_ohlc_15m(self):
+        from mrv.data.reader import resample_ohlc
+        df = _ohlcv_df(60)
+        df.index = pd.date_range("2020-01-02 09:30", periods=60, freq="5min", tz="America/New_York")
+        result = resample_ohlc(df, "15m")
+        assert len(result) < 60
+        assert len(result) > 0
+
+    def test_resample_ohlc_1h(self):
+        from mrv.data.reader import resample_ohlc
+        df = _ohlcv_df(60)
+        df.index = pd.date_range("2020-01-02 09:30", periods=60, freq="5min", tz="America/New_York")
+        result = resample_ohlc(df, "1h")
+        assert len(result) > 0
+        assert len(result) < 60
+
+    def test_resample_ohlc_invalid_freq(self):
+        from mrv.data.reader import resample_ohlc
+        df = _ohlcv_df(10)
+        df.index = pd.date_range("2020-01-01", periods=10, freq="5min", tz="America/New_York")
+        with pytest.raises(ValueError, match="Unsupported frequency"):
+            resample_ohlc(df, "3m")
+
+    def test_infer_price_column(self):
+        from mrv.data.reader import _infer_price_column
+        df = pd.DataFrame({"Adj Close": [1], "Open": [1]})
+        assert _infer_price_column(df) == "Adj Close"
+        df2 = pd.DataFrame({"close": [1], "open": [1]})
+        assert _infer_price_column(df2) == "close"
+
+    def test_infer_price_column_raises(self):
+        from mrv.data.reader import _infer_price_column
+        df = pd.DataFrame({"volume": [1], "open": [1]})
+        with pytest.raises(ValueError, match="Could not infer"):
+            _infer_price_column(df)
+
+
+# ---------------------------------------------------------------------------
+# report helpers
+# ---------------------------------------------------------------------------
+
+class TestReportHelpers:
+    def test_tex_escaping(self):
+        from mrv.validator.report import _tex
+        assert _tex("a & b") == "a \\& b"
+        assert _tex("100%") == "100\\%"
+        assert _tex("$x$") == "\\$x\\$"
+        assert _tex("a_b") == "a\\_b"
+
+    def test_ari_table(self):
+        from mrv.validator.report import _ari_table
+        labels = ["Set 0", "Set 1"]
+        values = [[1.0, 0.5], [0.5, 1.0]]
+        result = _ari_table(labels, values, threshold=0.65)
+        assert "\\begin{tabular}" in result
+        assert "\\bottomrule" in result
+        assert "cellcolor" in result  # 0.5 < 0.65
+
+    def test_ari_table_all_pass(self):
+        from mrv.validator.report import _ari_table
+        labels = ["Set 0", "Set 1"]
+        values = [[1.0, 0.8], [0.8, 1.0]]
+        result = _ari_table(labels, values, threshold=0.65)
+        assert "cellcolor" not in result
+
+    def test_eval_conditionals(self):
+        from mrv.validator.report import _eval_conditionals
+        text = "before\n%% IF_PASS\nyes\n%% ELSE\nno\n%% ENDIF\nafter"
+        result = _eval_conditionals(text, {"PASS": True})
+        assert "yes" in result
+        assert "no" not in result
+        result2 = _eval_conditionals(text, {"PASS": False})
+        assert "no" in result2
+        assert "yes" not in result2
+
+    def test_eval_conditionals_elif(self):
+        from mrv.validator.report import _eval_conditionals
+        text = "start\n%% IF_A\nA\n%% ELIF_B\nB\n%% ELSE\nC\n%% ENDIF\nend"
+        assert "A" in _eval_conditionals(text, {"A": True, "B": False})
+        result_b = _eval_conditionals(text, {"A": False, "B": True})
+        assert "B" in result_b
+        assert "A" not in result_b
+        result_c = _eval_conditionals(text, {"A": False, "B": False})
+        assert "C" in result_c
+
+
+# ---------------------------------------------------------------------------
+# base validator
+# ---------------------------------------------------------------------------
+
+class TestBaseValidator:
+    def test_make_run_dir(self, tmp_path):
+        from mrv.validator.base import BaseValidator
+
+        class DummyValidator(BaseValidator):
+            name = "test"
+            def validate(self, prices=None, labels=None):
+                return {}
+
+        cfg = {"validator": {"report_dir": str(tmp_path), "report_name": "test_{date}"}}
+        v = DummyValidator(cfg)
+        run_dir = v._make_run_dir()
+        assert run_dir.exists()
+        assert "test_" in run_dir.name
+        assert "_test" in run_dir.name
+
+
+# ---------------------------------------------------------------------------
+# version
+# ---------------------------------------------------------------------------
+
+class TestVersion:
+    def test_version_consistency(self):
+        import mrv
+        assert mrv.__version__ == "0.1.0"

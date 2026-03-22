@@ -12,14 +12,13 @@ import logging
 from datetime import datetime
 from itertools import combinations
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
 
 from mrv.validator.base import BaseValidator
 from mrv.validator.metrics import ari, ordering_consistency, ARI_THRESHOLD, SPEARMAN_THRESHOLD
-from mrv.data.reader import load_ohlcv
 from mrv.data.normalize import normalize
 from mrv.data.factors import build_factors, resolve_name, log_returns, volatility
 from mrv.models import fit as fit_model
@@ -166,7 +165,7 @@ class RepValidator(BaseValidator):
             "generated": datetime.now().isoformat(),
             "model": model.upper(), "n_states": n_states,
             "date_range": {"start": rep_cfg.get("start"), "end": rep_cfg.get("end")},
-            "factor_sets": [{"index": i, "label": l} for i, l in enumerate(set_labels)],
+            "factor_sets": [{"index": idx, "label": lbl} for idx, lbl in enumerate(set_labels)],
             "ari_threshold": ARI_THRESHOLD, "spearman_threshold": SPEARMAN_THRESHOLD,
             "overall_mean_ari": round(overall_ari, 6) if overall_ari else None,
             "overall_mean_spearman": round(overall_sp, 6) if overall_sp else None,
@@ -186,8 +185,10 @@ def _plot_ari_heatmap(ari_matrix: pd.DataFrame, asset_name: str, out_path: Path)
     data = ari_matrix.values.astype(float)
     im = ax.imshow(data, vmin=-0.1, vmax=1.0, cmap="RdYlGn", aspect="auto")
     labels = [f"Set {i}" for i in range(n)]
-    ax.set_xticks(range(n)); ax.set_yticks(range(n))
-    ax.set_xticklabels(labels, fontsize=9); ax.set_yticklabels(labels, fontsize=9)
+    ax.set_xticks(range(n))
+    ax.set_yticks(range(n))
+    ax.set_xticklabels(labels, fontsize=9)
+    ax.set_yticklabels(labels, fontsize=9)
     for i in range(n):
         for j in range(n):
             v = data[i, j]
@@ -201,7 +202,8 @@ def _plot_ari_heatmap(ari_matrix: pd.DataFrame, asset_name: str, out_path: Path)
     cbar.ax.axhline(y=ARI_THRESHOLD, color="black", linewidth=1.5, linestyle="--")
     fig.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(out_path, dpi=150, bbox_inches="tight"); plt.close()
+    plt.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close()
 
 
 def _write_text_report(path, results, set_labels, model, n_states, rep_cfg):
