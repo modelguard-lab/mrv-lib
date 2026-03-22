@@ -23,7 +23,8 @@ from mrv.data.normalize import normalize
 from mrv.data.factors import build_factors, resolve_name, log_returns, volatility
 from mrv.models import fit as fit_model
 import matplotlib
-matplotlib.use("Agg")
+if matplotlib.get_backend().lower() == "qtagg":
+    matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 logger = logging.getLogger(__name__)
