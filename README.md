@@ -157,8 +157,8 @@ Each run creates a timestamped directory under `reports/`:
 
 Based on the following PhD research:
 
-- Zheng, Low & Wang (2026). *Regime Labels Are Not Representation-Invariant*. Finance Research Letters.
-- Zheng, Low & Wang (2026). *Regime Labels Are Not Resolution-Invariant*. Working paper.
+- Zheng, Low & Wang (2026). *Regime Labels Are Not Representation-Invariant*. Submitted.
+- Zheng, Low & Wang (2026). *Regime Labels Are Not Resolution-Invariant*. In preparation.
 
 ## License
 
