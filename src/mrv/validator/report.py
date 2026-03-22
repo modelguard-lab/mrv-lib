@@ -220,12 +220,14 @@ def _render(template: str, data: Dict[str, Any]) -> str:
         )
     oc = "mrvred" if not partition_pass else "mrvgreen"
     sc = "mrvgreen" if ordering_pass else "mrvred"
+    overall_ps = "\\statuspass" if partition_pass else "\\statusfail"
+    overall_os = "\\statuspass" if ordering_pass else "\\statusfail"
     dash_rows += (
         f"\\midrule\n\\textbf{{Overall}} & "
         f"\\textcolor{{{oc}}}{{\\textbf{{{overall_ari:.3f}}}}} & "
         f"\\textcolor{{{sc}}}{{\\textbf{{{overall_sp:.3f}}}}} & "
-        f"--- & {'\\statuspass' if partition_pass else '\\statusfail'} & "
-        f"{'\\statuspass' if ordering_pass else '\\statusfail'} \\\\\n"
+        f"--- & {overall_ps} & "
+        f"{overall_os} \\\\\n"
     )
     dashboard = (
         "\\begin{table}[H]\n\\centering\n"

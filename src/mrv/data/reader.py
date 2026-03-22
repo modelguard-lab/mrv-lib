@@ -116,13 +116,13 @@ def validate_ohlcv(df: pd.DataFrame, symbol: str = "") -> List[str]:
     def _col(name: str) -> str:
         return name if name in df.columns else name.lower()
 
-    h, l, o, c = _col("High"), _col("Low"), _col("Open"), _col("Close")
+    col_h, col_l, col_o, col_c = _col("High"), _col("Low"), _col("Open"), _col("Close")
 
-    nan_counts = df[[o, h, l, c]].isna().sum()
+    nan_counts = df[[col_o, col_h, col_l, col_c]].isna().sum()
     if nan_counts.any():
         issues.append(f"{prefix}NaN in {nan_counts[nan_counts > 0].to_dict()}")
-    if (df[h] < df[l]).sum() > 0:
-        issues.append(f"{prefix}High < Low in {(df[h] < df[l]).sum()} bars")
+    if (df[col_h] < df[col_l]).sum() > 0:
+        issues.append(f"{prefix}High < Low in {(df[col_h] < df[col_l]).sum()} bars")
     if not df.index.is_monotonic_increasing:
         issues.append(f"{prefix}index not sorted ascending")
     dup = df.index.duplicated().sum()
