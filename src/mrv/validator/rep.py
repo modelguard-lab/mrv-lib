@@ -117,12 +117,46 @@ class RepValidator(BaseValidator):
             min_ari = float(np.nanmin(offdiag)) if len(offdiag) else float("nan")
             mean_sp = float(np.nanmean(sp_offdiag)) if len(sp_offdiag) else float("nan")
 
-            all_results[asset_name] = {
+            asset_result = {
                 "ari_matrix": ari_mat,
                 "mean_ari": mean_ari, "min_ari": min_ari,
                 "mean_spearman": mean_sp,
                 "n_factor_sets": n, "n_obs": len(price),
             }
+
+            # Attribution (if enabled)
+            if rep_cfg.get("attribution", False) and n >= 3:
+                from mrv.validator.attribution import loo_factor_attribution, temporal_attribution
+                attr = loo_factor_attribution(asset_labels, mean_ari)
+                asset_result["attribution"] = attr
+                logger.info("  Attribution: worst=%s delta=%s",
+                            attr["worst_contributor"],
+                            attr["scores"].get(attr["worst_contributor"], "N/A"))
+                # Temporal hotspot for worst pair
+                pairs = list(combinations(asset_labels.items(), 2))
+                if pairs:
+                    worst_pair = min(pairs, key=lambda p: ari(p[0][1], p[1][1]))
+                    (la, a_arr), (lb, b_arr) = worst_pair
+                    if hasattr(price, 'index'):
+                        nc = min(len(a_arr), len(b_arr), len(price))
+                        idx = price.index[:nc]
+                        temp = temporal_attribution(
+                            pd.Series(a_arr[:nc], index=idx),
+                            pd.Series(b_arr[:nc], index=idx),
+                        )
+                        if not temp.empty:
+                            asset_result["temporal_hotspots"] = temp
+                            temp.to_csv(run_dir / f"{asset_name}_attribution_timeline.csv", index=False)
+
+            # Business impact (if impact_fn provided)
+            impact = self._compute_impact_matrix(asset_labels, price)
+            if impact is not None:
+                asset_result["impact"] = impact
+                impact["delta_matrix"].to_csv(run_dir / f"{asset_name}_impact_matrix.csv")
+                logger.info("  Impact: max_delta=%.4f worst_pair=%s",
+                            impact["max_delta"], impact["worst_pair"])
+
+            all_results[asset_name] = asset_result
 
             _plot_ari_heatmap(ari_mat, asset_name, run_dir / f"{asset_name}.png")
 
@@ -161,6 +195,14 @@ class RepValidator(BaseValidator):
                 },
                 "heatmap_png": f"{name}.png",
             }
+            if "impact" in r:
+                imp = r["impact"]
+                assets_json[name]["impact"] = {
+                    "values": {k: round(v, 6) for k, v in imp["impacts"].items()},
+                    "max_delta": round(imp["max_delta"], 6),
+                    "mean_delta": round(imp["mean_delta"], 6),
+                    "worst_pair": imp["worst_pair"],
+                }
         return {
             "test": "representation_invariance",
             "generated": datetime.now().isoformat(),

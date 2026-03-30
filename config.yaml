@@ -97,6 +97,10 @@ validator:
   report_name: "mrv_report_{date}"      # {date} replaced at runtime (YYYYMMDD)
   report_template: templates/template.tex  # LaTeX template (source, tracked by git)
 
+  # SR 11-7 compliant report template
+  sr11_7_template: templates/sr11_7_template.tex
+  findings_overrides: null              # path to findings_override.yaml (optional)
+
   # Representation Invariance: do regime labels change under different factor sets?
   rep:
     assets:
@@ -108,10 +112,16 @@ validator:
     start: "2005-01-01"
     end: null
     model: gmm                          # gmm | hmm
+    attribution: false                  # Enable LOO attribution (slower)
     factors:                            # Multiple factor sets to cross-compare
       - [vol, drawdown, maxdd, var, cvar]
       - [vol, drawdown, var, cvar]
       - [real_skew, vol_stab, var, cvar]
+    monitoring:                         # Continuous monitoring thresholds
+      alert_ari_below: 0.3
+      alert_ari_delta: -0.15
+      alert_channels:
+        - type: file
 
   # Resolution Invariance: do regime labels agree across frequencies?
   res:
@@ -124,7 +134,13 @@ validator:
     start: "2026-01-01"
     end: null
     model: gmm
+    attribution: false                  # Enable freq-pair + temporal attribution
     factors: [vol, drawdown, var, cvar]
+    monitoring:
+      alert_ari_below: 0.3
+      alert_ari_delta: -0.15
+      alert_channels:
+        - type: file
 
   # Temporal Stability: do regime labels persist across rolling windows?
   temp:

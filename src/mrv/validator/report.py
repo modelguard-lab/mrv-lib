@@ -18,6 +18,8 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import numpy as np
+
 from mrv.validator.metrics import ARI_THRESHOLD, SPEARMAN_THRESHOLD
 
 logger = logging.getLogger(__name__)
@@ -296,6 +298,203 @@ def generate_report(
     output = _render(tpl.read_text(encoding="utf-8"), data)
     tex_path.write_text(output, encoding="utf-8")
     logger.info("LaTeX -> %s", tex_path)
+
+    return _compile_pdf(tex_path)
+
+
+def generate_sr11_7_report(
+    json_path: "str | Path",
+    template: "Optional[str | Path]" = None,
+    cfg: Optional[Dict[str, Any]] = None,
+    overrides: "Optional[str | Path]" = None,
+) -> Optional[Path]:
+    """Generate SR 11-7 compliant PDF from validator JSON.
+
+    Parameters
+    ----------
+    json_path : path to result.json
+    template : path to SR 11-7 .tex template
+    cfg : mrv config dict
+    overrides : path to findings_override.yaml
+    """
+    from mrv.validator.findings import (
+        generate_findings, overall_risk_rating, findings_summary,
+    )
+
+    json_path = Path(json_path)
+    if not json_path.exists():
+        raise FileNotFoundError(f"JSON not found: {json_path}")
+    data = json.loads(json_path.read_text(encoding="utf-8"))
+
+    cfg = cfg or {}
+    v_cfg = cfg.get("validator", {})
+    tpl_path = (
+        Path(template) if template
+        else Path(v_cfg.get("sr11_7_template", "templates/sr11_7_template.tex"))
+    )
+    if not tpl_path.exists():
+        raise FileNotFoundError(f"SR 11-7 template not found: {tpl_path}")
+
+    overrides_path = Path(overrides) if overrides else None
+    if overrides_path and not overrides_path.exists():
+        overrides_path = None
+
+    # Determine validator type
+    test_type = data.get("test", "")
+    validator_type = "res" if "resolution" in test_type else "rep"
+
+    # Generate findings
+    assets = data.get("assets", {})
+    findings = generate_findings(assets, validator_type, overrides_path)
+    risk_rating = overall_risk_rating(findings)
+    summary = findings_summary(findings)
+
+    # Build template
+    tpl = tpl_path.read_text(encoding="utf-8")
+
+    # Condition flags
+    flags = {
+        "RATING_HIGH": risk_rating == "High",
+        "RATING_MEDIUM": risk_rating == "Medium",
+        "RATING_LOW": risk_rating == "Low",
+        "IS_REP": validator_type == "rep",
+        "IS_RES": validator_type == "res",
+        "HAS_IMPACT": any("impact" in a for a in assets.values()),
+        "HAS_HMM": any("hmm_overall_mean_ari" in a for a in assets.values()),
+        "HAS_PERMUTATION": any(a.get("pvalue_perm") is not None for a in assets.values()),
+        "HAS_ATTRIBUTION": any("attribution" in a for a in assets.values()),
+    }
+    out = _eval_conditionals(tpl, flags)
+
+    # Expand finding blocks
+    finding_match = re.search(r"%% BEGIN_FINDING\s*\n(.*?)%% END_FINDING", out, re.DOTALL)
+    if finding_match and findings:
+        block_tpl = finding_match.group(1)
+        expanded = ""
+        for f in findings:
+            b = block_tpl
+            b = b.replace("{{FINDING_ID}}", _tex(f.id))
+            b = b.replace("{{FINDING_TITLE}}", _tex(f.title))
+            b = b.replace("{{FINDING_SEVERITY}}", f.severity)
+            b = b.replace("{{FINDING_SEVERITY_LC}}", f.severity.lower())
+            b = b.replace("{{FINDING_DESCRIPTION}}", _tex(f.description))
+            b = b.replace("{{FINDING_EVIDENCE}}", _tex(f.evidence))
+            b = b.replace("{{FINDING_RECOMMENDATION}}", _tex(f.recommendation))
+            b = b.replace("{{FINDING_OWNER}}", _tex(f.remediation_owner))
+            b = b.replace("{{FINDING_DEADLINE}}", _tex(f.deadline))
+            b = b.replace("{{FINDING_RESPONSE}}", _tex(f.management_response))
+            has_rem = bool(f.remediation_owner or f.deadline)
+            b = _eval_conditionals(b, {"HAS_REMEDIATION": has_rem})
+            expanded += b
+        out = out[:finding_match.start()] + expanded + out[finding_match.end():]
+    elif finding_match:
+        out = out[:finding_match.start()] + "No findings.\n" + out[finding_match.end():]
+
+    # Expand asset blocks (appendix)
+    asset_match = re.search(r"%% BEGIN_ASSET\s*\n(.*?)%% END_ASSET", out, re.DOTALL)
+    if asset_match:
+        block_tpl = asset_match.group(1)
+        expanded = ""
+        for name, a in assets.items():
+            b = block_tpl
+            b = b.replace("{{ASSET_NAME}}", _tex(name))
+            ari_data = a.get("ari_matrix", {})
+            if ari_data:
+                b = b.replace("{{ARI_TABLE}}", _ari_table(
+                    ari_data.get("labels", []), ari_data.get("values", []),
+                    data.get("ari_threshold", ARI_THRESHOLD)))
+            else:
+                b = b.replace("{{ARI_TABLE}}", "No ARI data.")
+            b = b.replace("{{HEATMAP_PNG}}", a.get("heatmap_png", ""))
+            b = b.replace("{{TIMELINE_PNG}}", a.get("timeline_png", ""))
+            asset_flags = {
+                "ASSET_HAS_HEATMAP": bool(a.get("heatmap_png")),
+                "ASSET_HAS_TIMELINE": bool(a.get("timeline_png")),
+            }
+            b = _eval_conditionals(b, asset_flags)
+            expanded += b
+        out = out[:asset_match.start()] + expanded + out[asset_match.end():]
+
+    # Global placeholders
+    dr = data.get("date_range", {})
+    date_range = f"{dr.get('start', 'N/A')} to {dr.get('end', 'N/A')}"
+    model = data.get("model", "GMM")
+    n_states = data.get("n_components", data.get("n_states", 2))
+
+    replacements = {
+        "{{MODEL_NAME}}": f"{model} Regime Model (K={n_states})",
+        "{{MODEL_OWNER}}": cfg.get("model_owner", "---"),
+        "{{VALIDATOR_NAME}}": "mrv-lib",
+        "{{DATE}}": data.get("generated", "")[:10],
+        "{{TEST_TYPE}}": "Resolution Invariance" if validator_type == "res" else "Representation Invariance",
+        "{{DATE_RANGE}}": date_range,
+        "{{VERSION}}": "0.2.0",
+        "{{MODEL}}": model,
+        "{{N_STATES}}": str(n_states),
+        "{{OVERALL_RISK_RATING}}": risk_rating,
+        "{{N_CRITICAL}}": str(summary.get("Critical", 0)),
+        "{{N_HIGH}}": str(summary.get("High", 0)),
+        "{{N_MEDIUM}}": str(summary.get("Medium", 0)),
+        "{{N_LOW}}": str(summary.get("Low", 0)),
+        "{{N_INFO}}": str(summary.get("Informational", 0)),
+        "{{N_TOTAL}}": str(sum(summary.values())),
+        "{{MODEL_DESCRIPTION}}": cfg.get("model_description", "Regime classification model for market risk monitoring."),
+        "{{PERTURBATION_TYPE}}": "time frequency" if validator_type == "res" else "risk factor representation",
+        "{{INPUT_DESCRIPTION}}": "OHLCV market data across multiple frequencies" if validator_type == "res" else "Price series with multiple risk factor sets",
+        "{{TEST_DESCRIPTION}}": (
+            "Cross-frequency ARI matrix comparing regime labels across 5m/15m/1h/1d"
+            if validator_type == "res"
+            else "Cross-representation ARI matrix comparing regime labels across factor sets"
+        ),
+        "{{ASSET_LIST}}": ", ".join(_tex(a) for a in assets.keys()),
+        "{{ARI_THRESHOLD}}": str(data.get("ari_threshold", ARI_THRESHOLD)),
+        "{{SPEARMAN_THRESHOLD}}": str(SPEARMAN_THRESHOLD),
+        "{{GENERATED}}": data.get("generated", ""),
+    }
+
+    # Optional fields
+    max_impact = 0.0
+    worst_impact_pair = "N/A"
+    for a in assets.values():
+        imp = a.get("impact", {})
+        if isinstance(imp, dict) and imp.get("max_delta", 0) > max_impact:
+            max_impact = imp["max_delta"]
+            worst_impact_pair = str(imp.get("worst_pair", "N/A"))
+    replacements["{{MAX_IMPACT_DELTA}}"] = f"{max_impact:.4f}"
+    replacements["{{WORST_IMPACT_PAIR}}"] = _tex(worst_impact_pair)
+
+    # HMM / permutation
+    hmm_aris = [a.get("hmm_overall_mean_ari") for a in assets.values() if a.get("hmm_overall_mean_ari") is not None]
+    replacements["{{HMM_MEAN_ARI}}"] = f"{np.mean(hmm_aris):.3f}" if hmm_aris else "N/A"
+    perm_pvals = [a.get("pvalue_perm") for a in assets.values() if a.get("pvalue_perm") is not None]
+    replacements["{{PERM_PVALUE}}"] = f"{np.mean(perm_pvals):.4f}" if perm_pvals else "N/A"
+    replacements["{{PERM_CI_LOW}}"] = "N/A"
+    replacements["{{PERM_CI_HIGH}}"] = "N/A"
+    for a in assets.values():
+        ci = a.get("null_ci")
+        if ci:
+            replacements["{{PERM_CI_LOW}}"] = f"{ci[0]:.4f}"
+            replacements["{{PERM_CI_HIGH}}"] = f"{ci[1]:.4f}"
+            break
+
+    # Attribution summary
+    attr_parts = []
+    for name, a in assets.items():
+        attr = a.get("attribution", {})
+        if isinstance(attr, dict) and attr.get("summary"):
+            attr_parts.append(f"{name}: {attr['summary']}")
+    replacements["{{ATTRIBUTION_SUMMARY}}"] = _tex(" ".join(attr_parts)) if attr_parts else "No attribution data."
+
+    for key, val in replacements.items():
+        out = out.replace(key, val)
+
+    # Write and compile
+    run_dir = json_path.parent
+    tex_path = run_dir / f"{run_dir.name}_sr11_7.tex"
+    out_text = out
+    # Need numpy for HMM mean
+    tex_path.write_text(out_text, encoding="utf-8")
+    logger.info("SR 11-7 LaTeX -> %s", tex_path)
 
     return _compile_pdf(tex_path)
 
