@@ -1,7 +1,5 @@
 """Tests for mrv.validator.findings and SR 11-7 report."""
 
-import numpy as np
-import pytest
 
 
 class TestFindings:

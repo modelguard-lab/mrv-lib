@@ -1,6 +1,5 @@
 """Tests for mrv.data.factors."""
 
-import numpy as np
 import pandas as pd
 import pytest
 

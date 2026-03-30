@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 (2026-03-23)
+## 0.2.0 (2026-03-30)
 
 - **Validator: Resolution Invariance (res)**: Multi-frequency regime analysis (5m/15m/1h/1d), cross-frequency ARI/AMI/VI matrices, permutation p-values, event/calm window analysis, TOD seasonality, calendar-window robustness, robustness sweeps (K, window scale), timeline and rolling ARI visualizations, HMM dual-model comparison
 - **Business Impact Function (`impact_fn`)**: User-defined callback `(labels, prices) -> float` on both RepValidator and ResValidator; computes pairwise impact delta matrix across representations/frequencies
