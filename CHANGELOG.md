@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1 (2026-03-30)
+
+- Fix CI lint errors (unused imports, lambda assignment)
+- Upgrade GitHub Actions to Node.js 22 (checkout v5, setup-python v6)
+- Trim shipped releases from ROADMAP
+
 ## 0.2.0 (2026-03-30)
 
 - **Validator: Resolution Invariance (res)**: Multi-frequency regime analysis (5m/15m/1h/1d), cross-frequency ARI/AMI/VI matrices, permutation p-values, event/calm window analysis, TOD seasonality, calendar-window robustness, robustness sweeps (K, window scale), timeline and rolling ARI visualizations, HMM dual-model comparison

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mrv-lib"
-version = "0.2.0"
+version = "0.2.1"
 authors = [
   { name = "Kai Zheng", email = "kai.zheng@mrv-lib.org" },
 ]
