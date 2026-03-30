@@ -16,7 +16,7 @@ from mrv.utils.config import load
 
 from pathlib import Path
 
-_VALIDATORS = ("rep",)  # res, temp: planned
+_VALIDATORS = ("rep", "res")
 
 
 def _find_latest_json(cfg):

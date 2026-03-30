@@ -13,8 +13,10 @@ mrv tests whether your market regime model produces **stable, reliable labels** 
 | Test | Question | Status |
 | ---- | -------- | ------ |
 | **Representation Invariance** | Do regime labels change when you use different risk factors? | v0.1.0 |
-| **Resolution Invariance** | Do labels agree across 5m / 1h / 1d frequencies? | v0.2.0 |
-| **RSS — Regime Stability Score** | A single score quantifying regime label stability across perturbations | v0.3.0 |
+| **Resolution Invariance** | Do labels agree across 5m / 15m / 1h / 1d frequencies? | v0.2.0 |
+| **RSS — Regime Stability Score** | A single score combining rep + res into actionable governance signal | v0.3.0 |
+
+v0.2.0 also includes: business impact function (`impact_fn`), continuous monitoring with alerts, disagreement attribution (LOO / frequency-pair / temporal), SR 11-7 compliant report with auto-generated findings, and a findings engine with severity classification.
 
 ## Install
 
@@ -33,7 +35,7 @@ pip install mrv-lib[all]
 
 ## Quick start
 
-> **Notebook:** See [`examples/quickstart.ipynb`](examples/quickstart.ipynb) for a step-by-step walkthrough with synthetic data — no IB connection needed.
+> **Notebooks:** See [`examples/paper1_representation_invariance.ipynb`](examples/paper1_representation_invariance.ipynb) and [`examples/paper2_resolution_invariance.ipynb`](examples/paper2_resolution_invariance.ipynb) for step-by-step walkthroughs.
 
 ```bash
 # 1. Download data (requires IB Gateway running)
@@ -42,20 +44,25 @@ python run.py download config.yaml
 # 2. Run representation invariance test + generate PDF
 python run.py run config.yaml rep
 
-# 3. Regenerate PDF from existing results
+# 3. Run resolution invariance test + generate PDF
+python run.py run config.yaml res
+
+# 4. Regenerate PDF from existing results
 python run.py report
 ```
 
 Or from Python:
 
 ```python
-from mrv.pipeline import run, download
+from mrv.pipeline import run, download, validate, report
 
 download("config.yaml")             # fetch data from IB
 run("config.yaml", "rep")           # validate + PDF
+run("config.yaml", "res")           # validate + PDF
 
 # Step by step (full control)
 from mrv.pipeline import load_data, compute_factors, fit_labels, validate, report
+from mrv.utils.config import load
 
 cfg = load("config.yaml")
 prices = load_data(cfg, "rep")
@@ -76,16 +83,29 @@ download:
     host: 127.0.0.1
     port: 4002
 
+factors:
+  vol_window: 20
+  drawdown_window: 60
+  tail_window: 60
+  tail_alpha: 0.05
+
 validator:
   rep:
     assets:
-      SPY: data/SPY_5m.csv
-      CL:  data/CL_5m.csv
+      SPY: data/SPY_1d.csv
     model: gmm
+    n_states: 3
     factors:
       - [vol, drawdown, maxdd, var, cvar]
       - [vol, drawdown, var, cvar]
       - [real_skew, vol_stab, var, cvar]
+
+  res:
+    assets:
+      SPY: [data/SPY_5m.csv]
+    model: gmm
+    n_states: 2
+    episode: 2026_iran
 ```
 
 ## Custom factors and models
@@ -116,12 +136,16 @@ mrv-lib/
 ├── config.yaml              # Configuration
 ├── run.py                   # CLI entry point
 ├── templates/
-│   └── template.tex         # LaTeX report template
+│   ├── template.tex         # Academic report template
+│   └── sr11_7_template.tex  # SR 11-7 regulatory report template
+├── examples/
+│   ├── paper1_representation_invariance.ipynb
+│   └── paper2_resolution_invariance.ipynb
 ├── src/mrv/
-│   ├── pipeline.py          # data → factors → model → validate → report
+│   ├── pipeline.py          # data -> factors -> model -> validate -> report
 │   ├── data/
 │   │   ├── reader.py        # Load, validate, resample OHLCV
-│   │   ├── factors.py       # Factor registry + built-in risk factors
+│   │   ├── factors.py       # Factor registry + 7 built-in risk factors
 │   │   └── normalize.py     # Rolling z-score, min-max
 │   ├── models/
 │   │   ├── __init__.py      # Model registry + fit()
@@ -129,36 +153,38 @@ mrv-lib/
 │   │   └── hmm.py           # Hidden Markov Model
 │   ├── validator/
 │   │   ├── base.py          # BaseValidator (subclass for custom tests)
-│   │   ├── rep.py           # Representation Invariance test
+│   │   ├── rep.py           # Representation Invariance test (Paper 1)
+│   │   ├── res.py           # Resolution Invariance test (Paper 2)
 │   │   ├── metrics.py       # ARI, AMI, NMI, Spearman, VI
-│   │   └── report.py        # JSON → LaTeX → PDF
+│   │   ├── attribution.py   # LOO, frequency-pair, temporal hotspots
+│   │   ├── findings.py      # SR 11-7 findings engine
+│   │   ├── monitor.py       # Continuous monitoring + alerts
+│   │   └── report.py        # JSON -> LaTeX -> PDF
 │   └── utils/
 │       ├── config.py        # YAML config loading
 │       ├── download.py      # IB data download
 │       └── log.py           # Logging setup
 ├── reports/                  # Output (gitignored)
-│   └── mrv_report_YYYYMMDD_rep/
-│       ├── result.json
-│       ├── report.pdf
-│       └── {asset}.png
-└── tests/
+└── tests/                    # 123 tests
 ```
 
 ## Output
 
 Each run creates a timestamped directory under `reports/`:
 
-- **result.json** — Complete data (reusable for report regeneration)
-- **report.pdf** — Professional report with cover page, dashboard, heatmaps, and remediation plan
-- **summary.txt** — Plain text quick view
-- **{asset}.png** — ARI heatmap per asset
+- **result.json** -- Complete data (reusable for report regeneration)
+- **report.pdf** -- Professional report with cover page, dashboard, heatmaps, and remediation plan
+- **summary.txt** -- Plain text quick view
+- **{asset}_ari_heatmap.png** -- ARI heatmap per asset
+- **{asset}_timeline.png** -- Regime timeline (res validator)
+- **pipeline_summary.csv** -- Summary metrics per asset
 
 ## Research
 
 Based on the following PhD research:
 
 - Zheng, Low & Wang (2026). *Regime Labels Are Not Representation-Invariant*. Submitted.
-- Zheng, Low & Wang (2026). *Regime Labels Are Not Resolution-Invariant*. In preparation.
+- Zheng, Low & Wang (2026). *Regime Labels Are Not Resolution-Invariant*. Submitted to Finance Research Letters.
 
 ## License
 
@@ -166,4 +192,4 @@ MIT. See [LICENSE](LICENSE).
 
 ## Maintainers
 
-[ModelGuard Lab](https://github.com/modelguard-lab) — Author: Kai Zheng.
+[ModelGuard Lab](https://github.com/modelguard-lab) -- Author: Kai Zheng.

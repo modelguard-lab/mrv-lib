@@ -38,11 +38,12 @@ from mrv.data.factors import build_factors, resolve_name
 from mrv.data.normalize import normalize
 from mrv.models import fit as fit_model
 from mrv.validator.rep import RepValidator
+from mrv.validator.res import ResValidator
 from mrv.validator.report import generate_report as _generate_report
 
 logger = logging.getLogger(__name__)
 
-_VALIDATORS: Dict[str, type] = {"rep": RepValidator}
+_VALIDATORS: Dict[str, type] = {"rep": RepValidator, "res": ResValidator}
 
 
 # ---------------------------------------------------------------------------
@@ -66,11 +67,12 @@ def download(config: Optional[str | Path] = None, cfg: Optional[Dict[str, Any]] 
 def load_data(
     cfg: Dict[str, Any],
     validator: str = "rep",
-) -> Dict[str, pd.Series]:
+) -> "Dict[str, pd.Series] | Dict[str, pd.DataFrame]":
     """
     Load price data for a validator's assets.
 
-    Returns ``{asset_name: price_series}``.
+    For ``rep``/``temp`` validators, returns ``{asset_name: price_series}``.
+    For ``res`` validator, returns ``{asset_name: ohlcv_5m_dataframe}``.
     Replace this function to use your own data source.
     """
     v_cfg = cfg.get("validator", {}).get(validator, {})
@@ -79,21 +81,35 @@ def load_data(
     end = v_cfg.get("end")
 
     prices = {}
-    for name, path_str in assets_map.items():
-        path = Path(path_str)
+    for name, path_val in assets_map.items():
+        # res validator: paths is a list → use first (5m) path
+        if isinstance(path_val, list):
+            path = Path(path_val[0])
+        else:
+            path = Path(path_val)
+
         if not path.exists():
             logger.warning("Skip %s: %s not found", name, path)
             continue
+
         df = load_ohlcv(path)
-        price = df["Close"] if "Close" in df.columns else df["close"]
+
         if start:
-            price = price[price.index >= pd.Timestamp(start, tz=price.index.tz)]
+            df = df[df.index >= pd.Timestamp(start, tz=df.index.tz)]
         if end:
-            price = price[price.index <= pd.Timestamp(end, tz=price.index.tz)]
-        if len(price) < 50:
-            logger.warning("Skip %s: too few data (%d)", name, len(price))
+            df = df[df.index <= pd.Timestamp(end, tz=df.index.tz)]
+
+        if len(df) < 50:
+            logger.warning("Skip %s: too few data (%d)", name, len(df))
             continue
-        prices[name] = price
+
+        # For res validator, return full OHLCV DataFrame
+        if validator == "res":
+            prices[name] = df
+        else:
+            price = df["Close"] if "Close" in df.columns else df["close"]
+            prices[name] = price
+
     return prices
 
 
@@ -159,16 +175,23 @@ def validate(
     name: str = "rep",
     prices: Optional[Dict[str, pd.Series]] = None,
     labels: Optional[Dict[str, Dict[str, Any]]] = None,
+    impact_fn=None,
 ) -> Dict[str, Any]:
     """
     Run a validator. If prices/labels are provided, they're passed through
     (skip internal data loading / model fitting).
+
+    Parameters
+    ----------
+    impact_fn : callable, optional
+        ``(labels: ndarray, prices: Series) -> float``.
+        When provided, computes a business impact matrix across representations.
     """
     cls = _VALIDATORS.get(name)
     if cls is None:
         raise ValueError(f"Unknown validator '{name}'. Available: {list(_VALIDATORS.keys())}")
     logger.info("=== Validate: %s ===", name)
-    v = cls(cfg)
+    v = cls(cfg, impact_fn=impact_fn)
     return v.validate(prices=prices, labels=labels)
 
 
@@ -186,6 +209,18 @@ def report(
     return _generate_report(json_path, template=template, cfg=cfg)
 
 
+def sr11_7_report(
+    json_path: str | Path,
+    template: Optional[str | Path] = None,
+    cfg: Optional[Dict[str, Any]] = None,
+    overrides: Optional[str | Path] = None,
+) -> Optional[Path]:
+    """Generate SR 11-7 compliant PDF report from JSON."""
+    from mrv.validator.report import generate_sr11_7_report
+    logger.info("=== SR 11-7 Report ===")
+    return generate_sr11_7_report(json_path, template=template, cfg=cfg, overrides=overrides)
+
+
 # ---------------------------------------------------------------------------
 # Convenience: run = validate + report
 # ---------------------------------------------------------------------------
@@ -194,16 +229,35 @@ def run(
     config: Optional[str | Path] = None,
     validator: str = "rep",
     cfg: Optional[Dict[str, Any]] = None,
+    impact_fn=None,
 ) -> Optional[Path]:
     """Validate → report. Returns PDF path or None."""
     if cfg is None:
         cfg = load(config)
     setup(cfg)
-    result = validate(cfg, validator)
+    result = validate(cfg, validator, impact_fn=impact_fn)
     json_path = result.get("json_path")
     if json_path:
         return report(json_path, cfg=cfg)
     return None
+
+
+def monitor(
+    config: Optional[str | Path] = None,
+    validator: str = "rep",
+    mode: str = "incremental",
+    cfg: Optional[Dict[str, Any]] = None,
+    impact_fn=None,
+) -> Dict[str, Any]:
+    """Run monitoring cycle: validate → history → alerts.
+
+    Parameters
+    ----------
+    mode : str
+        ``"init"`` for baseline, ``"incremental"`` for daily append.
+    """
+    from mrv.validator.monitor import monitor as _monitor
+    return _monitor(config=config, validator=validator, mode=mode, cfg=cfg, impact_fn=impact_fn)
 
 
 def register_validator(name: str, cls: type) -> None:

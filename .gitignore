@@ -1,3 +1,6 @@
+# Claude Code
+.claude/
+
 # mrv-lib runtime output
 /data/
 /logs/
