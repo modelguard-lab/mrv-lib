@@ -1,6 +1,5 @@
 """Tests for mrv.data.reader."""
 
-import numpy as np
 import pandas as pd
 import pytest
 

@@ -22,7 +22,6 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime
-from itertools import combinations
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -1421,7 +1420,7 @@ class ResValidator(BaseValidator):
             status = "PASS" if mean_ari is not None and mean_ari >= ARI_THRESHOLD else "FAIL"
             lines += [
                 f"--- {asset} ---",
-                f"  Mean off-diag ARI: {mean_ari:.3f} [{status}]" if mean_ari is not None else f"  Mean off-diag ARI: N/A",
+                f"  Mean off-diag ARI: {mean_ari:.3f} [{status}]" if mean_ari is not None else "  Mean off-diag ARI: N/A",
                 f"  Perm p-value:      {r.get('overall_mean_ari_pvalue_perm', 'N/A')}",
                 f"  Block perm p-val:  {r.get('block_perm_pvalue', 'N/A')}",
                 f"  Expanding ARI:     {r.get('expanding_mean_ari', 'N/A')}",

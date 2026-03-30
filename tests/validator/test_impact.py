@@ -16,7 +16,8 @@ class _Dummy(BaseValidator):
 
 class TestImpactFn:
     def test_compute_impact_matrix(self):
-        fn = lambda labels, prices: float(np.mean(labels))
+        def fn(labels, prices):
+            return float(np.mean(labels))
         v = _Dummy({"validator": {}}, impact_fn=fn)
         result = v._compute_impact_matrix(
             {"A": np.array([0, 0, 0, 1, 1]), "B": np.array([1, 1, 1, 1, 1]), "C": np.array([0, 0, 0, 0, 0])},

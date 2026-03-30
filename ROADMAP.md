@@ -1,26 +1,5 @@
 # mrv-lib Roadmap
 
-## Release Plan
-
-```
-v0.1.0 (shipped)  — rep validator, factors, models, PDF report
-v0.2.0 (shipped)  — res validator, impact_fn, monitoring, attribution, SR 11-7 report
-v0.3.0            — RSS scoring engine (Paper 3), phase boundaries, ordinal fallback
-```
-
-## What shipped in v0.2.0
-
-| Feature | Description |
-|---------|-------------|
-| **Resolution Invariance** | Cross-frequency ARI/AMI/VI, event/calm windows, TOD seasonality, robustness sweeps, block permutation, expanding-window, GMM diagnostics, CL roll-week |
-| **Business Impact** | `impact_fn` callback on RepValidator and ResValidator; pairwise impact delta matrix |
-| **Attribution** | LOO factor attribution (rep), frequency-pair decomposition (res), temporal hotspots |
-| **Monitoring** | `monitor()` with init/incremental modes, persistent CSV history, configurable alert thresholds, file + webhook alerts |
-| **SR 11-7 Report** | LaTeX template compliant with SR 11-7 / OCC 2011-12; auto-generated findings with severity classification; user-fillable overrides via YAML |
-| **Findings Engine** | Finding dataclass, classify_severity(), generate_findings(), overall_risk_rating() |
-
----
-
 ## v0.3.0 — RSS Scoring Engine (Paper 3 Integration)
 
 Paper 3: *The Regime Stability Score* (Zheng, Low & Wang 2026).
