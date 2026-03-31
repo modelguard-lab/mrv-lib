@@ -71,7 +71,7 @@ def load_data(
     """
     Load price data for a validator's assets.
 
-    For ``rep``/``temp`` validators, returns ``{asset_name: price_series}``.
+    For ``rep`` validator, returns ``{asset_name: price_series}``.
     For ``res`` validator, returns ``{asset_name: ohlcv_5m_dataframe}``.
     Replace this function to use your own data source.
     """
