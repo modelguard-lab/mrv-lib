@@ -13,10 +13,10 @@ mrv tests whether your market regime model produces **stable, reliable labels** 
 | Test | Question | Status |
 | ---- | -------- | ------ |
 | **Representation Invariance** | Do regime labels change when you use different risk factors? | v0.1.0 |
-| **Resolution Invariance** | Do labels agree across 5m / 15m / 1h / 1d frequencies? | v0.2.0 |
+| **Resolution Invariance** | Do labels agree across 5m / 15m / 1h / 1d frequencies? | v0.2.1 |
 | **RSS — Regime Stability Score** | A single score combining rep + res into actionable governance signal | v0.3.0 |
 
-v0.2.0 also includes: business impact function (`impact_fn`), continuous monitoring with alerts, disagreement attribution (LOO / frequency-pair / temporal), SR 11-7 compliant report with auto-generated findings, and a findings engine with severity classification.
+v0.2.1 also includes: business impact function (`impact_fn`), continuous monitoring with alerts, disagreement attribution (LOO / frequency-pair / temporal), SR 11-7 compliant report with auto-generated findings, and a findings engine with severity classification.
 
 ## Install
 
@@ -35,7 +35,7 @@ pip install mrv-lib[all]
 
 ## Quick start
 
-> **Notebooks:** See [`examples/paper1_representation_invariance.ipynb`](examples/paper1_representation_invariance.ipynb) and [`examples/paper2_resolution_invariance.ipynb`](examples/paper2_resolution_invariance.ipynb) for step-by-step walkthroughs.
+> **Notebooks:** See [`examples/quickstart.ipynb`](examples/quickstart.ipynb) for a quick overview, or [`examples/paper1_representation_invariance.ipynb`](examples/paper1_representation_invariance.ipynb) and [`examples/paper2_resolution_invariance.ipynb`](examples/paper2_resolution_invariance.ipynb) for step-by-step walkthroughs.
 
 ```bash
 # 1. Download data (requires IB Gateway running)
@@ -139,6 +139,7 @@ mrv-lib/
 │   ├── template.tex         # Academic report template
 │   └── sr11_7_template.tex  # SR 11-7 regulatory report template
 ├── examples/
+│   ├── quickstart.ipynb
 │   ├── paper1_representation_invariance.ipynb
 │   └── paper2_resolution_invariance.ipynb
 ├── src/mrv/

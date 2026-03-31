@@ -142,15 +142,15 @@ validator:
       alert_channels:
         - type: file
 
-  # Temporal Stability: do regime labels persist across rolling windows?
-  temp:
-    assets:
-      SPY: data/SPY_5m.csv
-      CL:  data/CL_5m.csv
-      USDJPY: data/USDJPY_5m.csv
-      IEF: data/IEF_5m.csv
-      GLD: data/GLD_5m.csv
-    start: "2005-01-01"
-    end: null
-    model: gmm
-    factors: [vol, drawdown, maxdd, var, cvar]
+  # Temporal Stability: planned for v0.3.0 (not yet implemented)
+  # temp:
+  #   assets:
+  #     SPY: data/SPY_5m.csv
+  #     CL:  data/CL_5m.csv
+  #     USDJPY: data/USDJPY_5m.csv
+  #     IEF: data/IEF_5m.csv
+  #     GLD: data/GLD_5m.csv
+  #   start: "2005-01-01"
+  #   end: null
+  #   model: gmm
+  #   factors: [vol, drawdown, maxdd, var, cvar]

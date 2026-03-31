@@ -83,6 +83,8 @@ def _eval_conditionals(text: str, flags: Dict[str, bool]) -> str:
             stack.append((active, val))
             active = active and val
         elif stripped.startswith("%% ELIF_"):
+            if not stack:
+                continue
             cond = stripped[8:]
             val = flags.get(cond, False)
             parent_active, prev_consumed = stack[-1]
@@ -90,6 +92,8 @@ def _eval_conditionals(text: str, flags: Dict[str, bool]) -> str:
             if active:
                 stack[-1] = (parent_active, True)
         elif stripped == "%% ELSE":
+            if not stack:
+                continue
             parent_active, prev_consumed = stack[-1]
             active = parent_active and not prev_consumed
         elif stripped == "%% ENDIF":
