@@ -14,7 +14,7 @@ mrv tests whether your market regime model produces **stable, reliable labels** 
 | ---- | -------- | ------ |
 | **Representation Invariance** | Do regime labels change when you use different risk factors? | v0.1.0 |
 | **Resolution Invariance** | Do labels agree across 5m / 15m / 1h / 1d frequencies? | v0.2.1 |
-| **RSS — Regime Stability Score** | A single score combining rep + res into actionable governance signal | v0.3.0 |
+| **MRI — Model Risk Index** | A single score combining rep + res into actionable governance signal | v0.3.0 |
 
 v0.2.1 also includes: business impact function (`impact_fn`), continuous monitoring with alerts, disagreement attribution (LOO / frequency-pair / temporal), SR 11-7 compliant report with auto-generated findings, and a findings engine with severity classification.
 

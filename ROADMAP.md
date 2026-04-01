@@ -1,15 +1,15 @@
 # mrv-lib Roadmap
 
-## v0.3.0 — RSS Scoring Engine (Paper 3 Integration)
+## v0.3.0 — MRI Scoring Engine (Paper 3 Integration)
 
-Paper 3: *The Regime Stability Score* (Zheng, Low & Wang 2026).
+Paper 3: *The Model Risk Index* (Zheng, Low & Wang 2026).
 
-RSS unifies representation invariance (Paper 1) and resolution invariance (Paper 2) into a single actionable score with theory-grounded phase boundaries that replace the empirical ARI threshold.
+MRI unifies representation invariance (Paper 1) and resolution invariance (Paper 2) into a single actionable score with theory-grounded phase boundaries that replace the empirical ARI threshold.
 
 ### Overview
 
 ```
-                    RSS Pipeline
+                    MRI Pipeline
                     ============
 Raw Data (5m OHLCV)
     |
@@ -20,9 +20,9 @@ Raw Data (5m OHLCV)
     +-- spectral branch: fit HMM at 5m --> transition matrix --> lambda_2, gamma, kappa
     |
     v
-RSS = (1 - RSS_rep) * (1 - RSS_res)          [Proposition 3.1: multiplicative]
+MRI = (1 - RSS_rep) * (1 - RSS_res)          [Proposition 3.1: multiplicative]
     |
-    +-- classify_zone(RSS, rho_S)  -->  Zone I / II / III
+    +-- classify_zone(MRI, rho_S)  -->  Zone I / II / III
     |
     +-- ordinal_bound(rho_0, K)    -->  violation check (Theorem 3.8)
     |
@@ -30,26 +30,26 @@ RSS = (1 - RSS_rep) * (1 - RSS_res)          [Proposition 3.1: multiplicative]
 Governance signal: PASS / WARNING / BREACH
 ```
 
-### 1. RSS Core Module (`mrv.rss`)
+### 1. MRI Core Module (`mrv.mri`)
 
-New module `src/mrv/rss/` with:
+New module `src/mrv/mri/` with:
 
 ```
-rss/
-  __init__.py        # public API: compute_rss, classify_zone, RssResult
-  score.py           # RSS computation and zone classification
+mri/
+  __init__.py        # public API: compute_rss, classify_zone, MriResult
+  score.py           # MRI computation and zone classification
   spectral.py        # HMM spectral gap, lambda_2, kappa estimation
   wasserstein.py     # sliced Wasserstein distance
   ordinal.py         # ordinal robustness bound g(rho_0, K)
 ```
 
-#### 1a. RSS Score Computation (`score.py`)
+#### 1a. MRI Score Computation (`score.py`)
 
 **Formula** (Proposition 3.1 -- multiplicative decomposition):
 
 ```python
-def compute_rss(rss_rep: float, rss_res: float, rss_cross: float = 0.0) -> float:
-    """RSS = (1 - RSS_rep) * (1 - RSS_res) * (1 - RSS_cross), clamped to [0, 1].
+def compute_mri(rss_rep: float, rss_res: float, rss_cross: float = 0.0) -> float:
+    """MRI = (1 - RSS_rep) * (1 - RSS_res) * (1 - RSS_cross), clamped to [0, 1].
 
     RSS_rep = 1 - mean(ARI across representation pairs)
     RSS_res = 1 - mean(ARI across frequency pairs)
@@ -61,14 +61,14 @@ def compute_rss(rss_rep: float, rss_res: float, rss_cross: float = 0.0) -> float
 
 ```python
 def classify_zone(
-    rss: float,
+    mri: float,
     rho_s: float,
-    b12: float = 0.80,       # Zone I/II boundary (RSS axis)
+    b12: float = 0.80,       # Zone I/II boundary (MRI axis)
     b23: float = 0.80,       # Zone II/III boundary (rho_S axis)
 ) -> str:
     """
-    Zone I  (Stable):    RSS >= b12 AND rho_S >= b23  ->  labels trustworthy
-    Zone II (Collapsed): RSS <  b12 AND rho_S >= b23  ->  ordering preserved, partition unreliable
+    Zone I  (Stable):    MRI >= b12 AND rho_S >= b23  ->  labels trustworthy
+    Zone II (Collapsed): MRI <  b12 AND rho_S >= b23  ->  ordering preserved, partition unreliable
     Zone III (Chaotic):  rho_S < b23                  ->  fully unreliable
     """
 ```
@@ -77,8 +77,8 @@ def classify_zone(
 
 ```python
 @dataclass
-class RssResult:
-    rss: float                    # composite score [0, 1]
+class MriResult:
+    mri: float                    # composite MRI score [0, 1]
     rss_rep: float                # representation component
     rss_res: float                # resolution component
     zone: str                     # "I", "II", "III"
@@ -148,11 +148,11 @@ def should_use_ordinal_fallback(zone: str, rho_s: float,
 
 ---
 
-### 2. RssValidator (`mrv.validator.rss_validator`)
+### 2. MriValidator (`mrv.validator.rss_validator`)
 
 ```python
-class RssValidator(BaseValidator):
-    """Unified RSS validator -- runs rep + res + spectral, computes RSS, classifies zone."""
+class MriValidator(BaseValidator):
+    """Unified MRI validator -- runs rep + res + spectral, computes MRI, classifies zone."""
 
     def validate(self, prices=None) -> dict:
         """
@@ -160,16 +160,16 @@ class RssValidator(BaseValidator):
         1. Cross-representation ARI (Paper 1)
         2. Cross-frequency ARI (Paper 2)
         3. HMM spectral parameters
-        4. RSS = (1 - RSS_rep) * (1 - RSS_res)
+        4. MRI = (1 - RSS_rep) * (1 - RSS_res)
         5. Zone classification + ordinal bound check
-        6. Return RssResult per asset + aggregate
+        6. Return MriResult per asset + aggregate
         """
 ```
 
 **CLI:**
 
 ```bash
-python run.py run config.yaml rss
+python run.py run config.yaml mri
 ```
 
 ---
@@ -178,7 +178,7 @@ python run.py run config.yaml rss
 
 ```yaml
 validator:
-  rss:
+  mri:
     assets:
       SPY: data/SPY_5m.csv
       CL:  data/CL_5m.csv
@@ -191,15 +191,15 @@ validator:
       - [vol, drawdown, maxdd, var, cvar]
       - [vol, drawdown, var, cvar]
       - [real_skew, vol_stab, var, cvar]
-    zone_boundary_rss: 0.80               # B_12
+    zone_boundary_mri: 0.80               # B_12
     zone_boundary_rho: 0.80               # B_23
     local_variance_window: 63
     wasserstein_slices: 100
     monitoring:
       alert_zone_breach: true
       alert_zone_transition: true
-      alert_rss_below: 0.40
-      alert_rss_delta: -0.10
+      alert_mri_below: 0.40
+      alert_mri_delta: -0.10
 ```
 
 ---
@@ -222,18 +222,18 @@ Zone-based severity replaces empirical ARI threshold:
 
 | Deliverable | Acceptance Criteria |
 |-------------|---------------------|
-| `mrv.rss.compute_rss()` | Multiplicative formula, clamped [0,1], unit tested |
-| `mrv.rss.classify_zone()` | Correct zone assignment for all boundary cases |
-| `mrv.rss.fit_hmm_spectral()` | Returns lambda_2, gamma, kappa; agrees with hmmlearn |
-| `mrv.rss.sliced_wasserstein()` | Monotonic with known divergence; n_slices configurable |
-| `mrv.rss.ordinal_bound()` | g(rho_0, K) matches Paper 3 formula |
-| `RssValidator` | Runs rep + res + spectral in one pass; returns RssResult |
-| Config `validator.rss` | YAML-driven, all parameters documented |
-| JSON/PDF output | RSS dashboard, phase diagram, zone governance actions |
+| `mrv.mri.compute_mri()` | Multiplicative formula, clamped [0,1], unit tested |
+| `mrv.mri.classify_zone()` | Correct zone assignment for all boundary cases |
+| `mrv.mri.fit_hmm_spectral()` | Returns lambda_2, gamma, kappa; agrees with hmmlearn |
+| `mrv.mri.sliced_wasserstein()` | Monotonic with known divergence; n_slices configurable |
+| `mrv.mri.ordinal_bound()` | g(rho_0, K) matches Paper 3 formula |
+| `MriValidator` | Runs rep + res + spectral in one pass; returns MriResult |
+| Config `validator.mri` | YAML-driven, all parameters documented |
+| JSON/PDF output | MRI dashboard, phase diagram, zone governance actions |
 | Findings engine | Zone-based severity replaces ARI threshold |
-| Monitoring | Zone transition alerts, RSS-based thresholds |
-| Tests | Unit + integration covering all RSS functions |
-| Notebook | `examples/paper3_regime_stability_score.ipynb` |
+| Monitoring | Zone transition alerts, MRI-based thresholds |
+| Tests | Unit + integration covering all MRI functions |
+| Notebook | `examples/paper3_model_risk_index.ipynb` |
 
 ### 6. Implementation Dependency
 
