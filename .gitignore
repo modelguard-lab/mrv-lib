@@ -1,6 +1,10 @@
 # Claude Code
 .claude/
 
+# PDFs
+*.pdf
+*.PDF
+
 # mrv-lib runtime output
 /data/
 /logs/
