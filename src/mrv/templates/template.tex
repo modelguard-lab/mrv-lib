@@ -1,0 +1,217 @@
+% MRV -- Specification Invariance Report (default template)
+% Designed for representation (Paper 1) and resolution (Paper 2) validator output.
+%
+% Placeholders: {{KEY}} -- replaced with data by report.py
+% Conditionals: %% IF_xxx ... %% ELSE ... %% ENDIF
+% Asset block:  %% BEGIN_ASSET ... %% END_ASSET -- repeated per asset
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{hyperref}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{amsmath}
+\usepackage{colortbl}
+\usepackage{tabularx}
+
+\definecolor{mrvblue}{RGB}{0,51,102}
+\definecolor{mrvgray}{RGB}{100,100,100}
+\definecolor{mrvred}{RGB}{180,30,30}
+\definecolor{mrvgreen}{RGB}{30,120,50}
+\definecolor{mrvredbg}{RGB}{253,235,235}
+\definecolor{mrvgreenbg}{RGB}{232,248,237}
+
+\newcommand{\statuspass}{\textcolor{mrvgreen}{\textbf{PASS}}}
+\newcommand{\statusfail}{\textcolor{mrvred}{\textbf{FAIL}}}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{mrvgray}MRV: Specification Invariance Report}
+\fancyhead[R]{\small\color{mrvgray}{{DATE}}}
+\fancyfoot[L]{\footnotesize\color{mrvgray}CONFIDENTIAL \enspace$\cdot$\enspace \href{https://mrv-lib.org}{mrv-lib}}
+\fancyfoot[R]{\small\color{mrvgray}\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.2pt}
+
+\titleformat{\section}{\large\bfseries\color{mrvblue}}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalsize\bfseries\color{mrvblue}}{\thesubsection}{1em}{}
+\hypersetup{colorlinks=true, linkcolor=mrvblue, urlcolor=mrvblue}
+
+\begin{document}
+
+% =====================================================================
+% COVER
+% =====================================================================
+\begin{titlepage}
+\centering
+\vspace*{2cm}
+
+{\Huge\bfseries\color{mrvblue} Specification Invariance Report}\\[0.5cm]
+{\LARGE Representation and Resolution Stability Assessment}\\[1.5cm]
+
+%% IF_PARTITION_PASS
+\fcolorbox{mrvgreen}{mrvgreenbg}{%
+  \parbox{0.7\textwidth}{\centering
+    \vspace{0.5cm}
+    {\Large\textbf{Partition:} \statuspass}\\[0.3cm]
+    {\large Mean ARI {{OVERALL_MEAN_ARI}} $\geq$ {{ARI_THRESHOLD}}: labels are stable across specifications}
+    \vspace{0.5cm}
+  }%
+}
+%% ELSE
+\fcolorbox{mrvred}{mrvredbg}{%
+  \parbox{0.7\textwidth}{\centering
+    \vspace{0.5cm}
+    {\Large\textbf{Partition:} \statusfail}\\[0.3cm]
+    {\large Mean ARI {{OVERALL_MEAN_ARI}} $<$ {{ARI_THRESHOLD}}: labels are specification-dependent}
+    \vspace{0.5cm}
+  }%
+}
+%% ENDIF
+
+\vspace{1.5cm}
+
+\begin{tabular}{ll}
+\toprule
+\textbf{Date}    & {{DATE}} \\
+\textbf{Assets}  & {{ASSET_LIST}} \\
+\textbf{Period}  & {{DATE_RANGE}} \\
+\textbf{Model}   & {{MODEL}} ($K = {{N_STATES}}$) \\
+\bottomrule
+\end{tabular}
+
+\vfill
+{\footnotesize\color{mrvgray} CONFIDENTIAL: For internal model validation use only.}
+\end{titlepage}
+
+
+\tableofcontents
+\newpage
+
+
+% =====================================================================
+% 1. DASHBOARD
+% =====================================================================
+\section{Dashboard}
+
+Specification invariance measures how stable model outputs (regime labels)
+are when the same model is fitted under different admissible specifications.
+The two layers assessed are partition stability (Adjusted Rand Index, ARI)
+and risk-ordering stability (Spearman rank correlation).
+
+{{DASHBOARD_TABLE}}
+
+\subsection{Overall Result}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.4}
+\begin{tabular}{lrl}
+\toprule
+\textbf{Layer} & \textbf{Value} & \textbf{Threshold} \\
+\midrule
+Mean ARI (partition)      & {{OVERALL_MEAN_ARI}}      & $\geq$ {{ARI_THRESHOLD}} \\
+Mean Spearman (ordering)  & {{OVERALL_MEAN_SPEARMAN}} & $\geq$ {{SPEARMAN_THRESHOLD}} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+
+% =====================================================================
+% 2. SPECIFICATIONS
+% =====================================================================
+\section{Specifications}
+
+The following specifications were compared:
+
+{{FACTOR_SETS}}
+
+
+% =====================================================================
+% 3. PER-ASSET DETAIL
+% =====================================================================
+\section{Per-Asset Detail}
+
+%% BEGIN_ASSET
+\subsection{{{ASSET_NAME}}}
+
+\noindent
+Observations: {{N_OBS}} \quad$\cdot$\quad Specifications: {{N_FACTOR_SETS}}
+\quad$\cdot$\quad Mean ARI: \textcolor{{{ARI_COLOR}}}{\textbf{{{MEAN_ARI}}}}
+\quad$\cdot$\quad Min ARI: {{MIN_ARI}}
+\quad$\cdot$\quad Mean Spearman: {{MEAN_SPEARMAN}}
+
+\medskip
+\noindent{{FINDING_TEXT}}
+
+\medskip
+\begin{center}
+{{ARI_TABLE}}
+\end{center}
+%% END_ASSET
+
+
+% =====================================================================
+% 4. METHODOLOGY
+% =====================================================================
+\newpage
+\section{Methodology}
+
+For each asset, the model is fitted independently under every admissible
+specification. Pairwise agreement between the resulting label assignments is
+measured with the Adjusted Rand Index (ARI); risk-ordering stability is
+measured with a rank-aligned Spearman correlation against a risk proxy.
+
+\begin{enumerate}[leftmargin=2em]
+\item \textbf{Partition layer:} mean off-diagonal ARI across specification
+      pairs. A value $\geq$ {{ARI_THRESHOLD}} indicates acceptable partition
+      recovery (Steinley, 2004).
+\item \textbf{Ordering layer:} mean Spearman correlation across specification
+      pairs. A value $\geq$ {{SPEARMAN_THRESHOLD}} indicates a stable ordinal
+      risk ranking even when categorical labels differ.
+\end{enumerate}
+
+\noindent
+Theoretical basis: Zheng, Low \& Wang (2026), representation invariance
+(Paper 1) and resolution invariance (Paper 2).
+
+
+% =====================================================================
+% APPENDIX
+% =====================================================================
+\newpage
+\appendix
+
+\section{Software \& Reproducibility}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Item} & \textbf{Detail} \\
+\midrule
+Software           & mrv-lib (\href{https://mrv-lib.org}{mrv-lib.org}) \\
+ARI threshold      & {{ARI_THRESHOLD}} \\
+Spearman threshold & {{SPEARMAN_THRESHOLD}} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\vfill
+\begin{center}
+\footnotesize\textcolor{mrvgray}{
+Generated by mrv-lib.
+This report is a model validation tool and does not constitute
+regulatory certification or compliance attestation.
+}
+\end{center}
+
+\end{document}

@@ -1,0 +1,165 @@
+# =============================================================================
+# mrv-lib configuration
+# =============================================================================
+#
+# Usage:
+#   mrv run config.yaml              # run representation invariance + report
+#   mrv run config.yaml rep          # representation invariance only
+#   mrv download config.yaml         # download data only
+#   mrv init                         # scaffold a fresh config.yaml
+#
+# Resolution invariance (Paper 2) is labels-first: fit your own regime models at
+# each frequency and call mrv.validate_res(labels=...) from the Python API.
+#
+# Override by passing a custom YAML path.
+
+# -----------------------------------------------------------------------------
+# Download: data source, asset universe, and time range
+# -----------------------------------------------------------------------------
+# source: yahoo (free, no account) or ib (requires IB Gateway running)
+# Each symbol × freq pair is saved as e.g. SPY_1d.csv, SPY_1h.csv.
+
+download:
+  # Data source: yahoo | ib
+  source: yahoo
+
+  # Directory for downloaded CSV files (relative to working directory)
+  data_dir: data
+
+  # IB Gateway / TWS connection (only used when source: ib)
+  ib:
+    host: 127.0.0.1          # Only localhost allowed by default (security)
+    port: 4002                # 4002 = IB Gateway paper; 7497 = TWS paper
+    client_id: null           # null = auto-generate; set fixed int for reproducibility
+    tz: America/New_York      # Timezone for bar timestamps
+    duration_chunk: "1 W"     # IB request chunk size (max ~1 week for 5m bars)
+    use_rth: false            # false = include extended/overnight session
+    # Futures contract mapping: symbol -> expiry or "CONTFUT" (continuous front-month)
+    future_expiry:
+      CL: CONTFUT
+
+  # Asset universe: all symbols share the same freq / start / end
+  # ^GSPC is auto-mapped to SPX index (IB only provides daily for indices)
+  symbols: [SPY, USDJPY, CL=F, IEF, GLD]
+
+  # Frequencies to download from IB (each is fetched separately)
+  # Available: 5m, 15m, 1h, 1d
+  freq: [5m, 15m, 1h, 1d]
+
+  # Time range (end: null = today)
+  start: "2026-01-01"
+  end: null
+
+# -----------------------------------------------------------------------------
+# Logging
+# -----------------------------------------------------------------------------
+# Console logging is always enabled. Set log_dir to also write timestamped
+# log files, e.g. logs/mrv_20260319_143012.log
+
+logging:
+  level: INFO                 # DEBUG | INFO | WARNING | ERROR
+  format: "%(asctime)s %(levelname)s [%(name)s] %(message)s"
+  log_dir: logs               # null = console only
+  quiet:                      # Suppress noisy third-party loggers
+    - hmmlearn
+    - urllib3
+    - matplotlib
+
+# -----------------------------------------------------------------------------
+# Factors: rolling window parameters for feature engineering
+# -----------------------------------------------------------------------------
+# Used by mrv.data.factors.build_factors(). All windows in trading days.
+
+factors:
+  vol_window: 20              # Realized volatility (annualized, sqrt(252))
+  drawdown_window: 60         # Current drawdown from rolling max
+  tail_window: 60             # VaR / CVaR lookback
+  tail_alpha: 0.05            # VaR / CVaR quantile (5th percentile)
+  skew_window: 60             # Realized skewness
+  stability_window: 60        # Volatility-of-volatility
+
+# -----------------------------------------------------------------------------
+# Normalization: applied after factor computation
+# -----------------------------------------------------------------------------
+# Used by mrv.data.normalize.normalize().
+
+normalize:
+  mode: rolling_zscore        # rolling_zscore | minmax | none
+  window: 120                 # Rolling lookback for standardization
+
+# -----------------------------------------------------------------------------
+# Validator: regime diagnostics configuration
+# -----------------------------------------------------------------------------
+# Tests from the research papers:
+#   rep: Representation Invariance (Paper 1) -- same asset, different factor sets
+#        (run via `mrv run config.yaml rep`)
+#   res: Resolution Invariance (Paper 2) -- same asset, different frequencies
+#        (labels-first: call mrv.validate_res(labels=...) from the Python API)
+#
+# assets: symbol -> path(s) to price CSV(s)
+#   rep: single CSV per asset (base frequency)
+#   res: list of CSVs per asset (one per frequency)
+# If omitted, paths are inferred from download.data_dir + download.symbols.
+
+validator:
+  report_dir: reports                   # Output directory for reports
+  report_name: "mrv_report_{date}"      # {date} replaced at runtime (YYYYMMDD)
+  # Report template
+  #   null : use the packaged specification-invariance report (rep + res).
+  #   Set a path to override with your own .tex template.
+  report_template: null
+  findings_overrides: null              # path to findings_override.yaml (optional)
+
+  # Representation Invariance: do regime labels change under different factor sets?
+  rep:
+    assets:
+      SPY: data/SPY_5m.csv
+      CL:  data/CL_5m.csv
+      USDJPY: data/USDJPY_5m.csv
+      IEF: data/IEF_5m.csv
+      GLD: data/GLD_5m.csv
+    start: "2005-01-01"
+    end: null
+    model: gmm                          # gmm | hmm
+    attribution: false                  # Enable LOO attribution (slower)
+    factors:                            # Multiple factor sets to cross-compare
+      - [vol, drawdown, maxdd, var, cvar]
+      - [vol, drawdown, var, cvar]
+      - [real_skew, vol_stab, var, cvar]
+    monitoring:                         # Continuous monitoring thresholds
+      alert_ari_below: 0.3
+      alert_ari_delta: -0.15
+      alert_channels:
+        - type: file
+
+  # Resolution Invariance: do regime labels agree across frequencies?
+  res:
+    assets:
+      SPY: [data/SPY_5m.csv, data/SPY_15m.csv, data/SPY_1h.csv, data/SPY_1d.csv]
+      CL:  [data/CL_5m.csv, data/CL_15m.csv, data/CL_1h.csv, data/CL_1d.csv]
+      USDJPY: [data/USDJPY_5m.csv, data/USDJPY_15m.csv, data/USDJPY_1h.csv, data/USDJPY_1d.csv]
+      IEF: [data/IEF_5m.csv, data/IEF_15m.csv, data/IEF_1h.csv, data/IEF_1d.csv]
+      GLD: [data/GLD_5m.csv, data/GLD_15m.csv, data/GLD_1h.csv, data/GLD_1d.csv]
+    start: "2026-01-01"
+    end: null
+    model: gmm
+    attribution: false                  # Enable freq-pair + temporal attribution
+    factors: [vol, drawdown, var, cvar]
+    monitoring:
+      alert_ari_below: 0.3
+      alert_ari_delta: -0.15
+      alert_channels:
+        - type: file
+
+  # Temporal Stability: planned for v0.3.0 (not yet implemented)
+  # temp:
+  #   assets:
+  #     SPY: data/SPY_5m.csv
+  #     CL:  data/CL_5m.csv
+  #     USDJPY: data/USDJPY_5m.csv
+  #     IEF: data/IEF_5m.csv
+  #     GLD: data/GLD_5m.csv
+  #   start: "2005-01-01"
+  #   end: null
+  #   model: gmm
+  #   factors: [vol, drawdown, maxdd, var, cvar]

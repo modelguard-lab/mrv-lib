@@ -1,0 +1,66 @@
+cff-version: 1.2.0
+message: "If you use mrv-lib in your research or governance work, please cite it as below."
+type: software
+title: "mrv-lib: Model Risk Validator"
+abstract: >
+  mrv-lib is an open-source Python library for quantitative model validation.
+  It implements representation-invariance (Paper 1) and resolution-invariance
+  (Paper 2) tests that measure how stable a model's regime labels are across
+  admissible specifications, supporting SR 26-2 / OCC Bulletin 2026-13
+  (formerly SR 11-7) model risk management workflows.
+authors:
+  - family-names: Zheng
+    given-names: Kai
+    email: kai.zheng@mrv-lib.org
+    affiliation: ModelGuard Lab
+version: "0.6.1"
+date-released: "2026-07-06"
+url: "https://mrv-lib.org"
+repository-code: "https://github.com/modelguard-lab/mrv-lib"
+license: AGPL-3.0-or-later
+doi: "10.5281/zenodo.PLACEHOLDER"
+references:
+  - type: article
+    title: "Regime Labels Are Not Representation-Invariant"
+    authors:
+      - family-names: Zheng
+        given-names: Kai
+      - family-names: Low
+        given-names: Rand Kwong Yew
+      - family-names: Wang
+        given-names: Ruili
+    year: 2026
+    journal: "Finance Research Letters"
+    notes: "Paper 1 (FRL_110383). Accepted 2026-06-21 (in production)."
+  - type: article
+    title: "Regime Labels Are Not Resolution-Invariant"
+    authors:
+      - family-names: Zheng
+        given-names: Kai
+      - family-names: Low
+        given-names: Rand Kwong Yew
+      - family-names: Wang
+        given-names: Ruili
+    year: 2026
+    journal: "Finance Research Letters"
+    notes: "Paper 2 (FRL-D-26-01529R3). Accepted 2026-06-08 (in production)."
+  - type: generic
+    title: "OCC Bulletin 2026-13 / SR 26-2: Revised Model Risk Management Guidance"
+    authors:
+      - name: "Office of the Comptroller of the Currency"
+      - name: "Federal Reserve Board"
+      - name: "Federal Deposit Insurance Corporation"
+    year: 2026
+    url: "https://www.occ.treas.gov/news-issuances/bulletins/2026/bulletin-2026-13.html"
+    notes: >
+      Jointly issued 2026-04-17. Supersedes SR 11-7 (Federal Reserve, 2011) as
+      the primary US model risk management guidance. mrv-lib report templates
+      target this standard from v0.5.0 onward.
+  - type: generic
+    title: "SR 11-7: Guidance on Model Risk Management (historical reference)"
+    authors:
+      - name: "Federal Reserve Board"
+    year: 2011
+    notes: >
+      Superseded by SR 26-2 / OCC Bulletin 2026-13 on 2026-04-17. Retained
+      here as a historical reference; mrv-lib v0.4.x targeted this standard.
