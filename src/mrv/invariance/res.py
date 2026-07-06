@@ -276,8 +276,8 @@ def res_invariance_validator(
 
     Examples
     --------
-    SPY demo across two frequencies with synthetic labels (mirrors
-    ``examples/paper2_res_invariance_validator_demo.py``)::
+    SPY demo across two frequencies with synthetic labels (see
+    ``examples/paper2_resolution_invariance.ipynb`` for the full walkthrough)::
 
         from mrv.invariance import res_invariance_validator, ResolutionSpec
         import pandas as pd
