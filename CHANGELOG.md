@@ -4,9 +4,46 @@ All notable changes to mrv-lib are documented here.
 The project follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.7.0] - Unreleased
 
-(no changes yet)
+### Changed
+
+- **BREAKING:** renamed the `ResInvarianceResult` field
+  `within_intraday_excess` to `intraday_overall_ari_gap`. The value is
+  unchanged (intraday-only mean off-diagonal ARI minus the overall mean
+  off-diagonal ARI); the old name wrongly suggested Paper 2's
+  simulated-baseline "within-intraday excess", which this field does not
+  reproduce.
+- Documentation now teaches only the top-level functional API
+  (`mrv.rep_invariance_validator` / `mrv.res_invariance_validator`,
+  `mrv.report`, `mrv.ResolutionSpec`); `mrv.pipeline` is marked the internal
+  CLI backend rather than a recommended programmatic entry point.
+- The functional validators and the `mrv.pipeline` helpers now share one
+  cross-frequency / cross-representation orchestration core, so both entry
+  points return identical numbers.
+- ARI (0.65) and Spearman (0.85) thresholds are now documented as
+  library-default module constants surfaced on the result object, not
+  paper-prescribed cutoffs and not per-call override arguments.
+
+### Fixed
+
+- `align_labels_to_finest` now starts the common aligned index at the latest
+  first-observation across frequencies, dropping a spurious regime-0 head that
+  `fillna(0)` previously injected when frequencies had staggered start dates.
+  This is a no-op on panels that share a start date.
+- Report generation no longer renders a NaN mean-ARI as a green "Pass"; an
+  undefined mean-ARI is now shown as a neutral "N/A: insufficient data".
+- `mrv run` now exits with a non-zero status when a validation or report step
+  fails, instead of reporting success.
+- Resolution reports now show the true per-asset observation count (previously
+  always rendered as 0).
+- Packaging: `COMMERCIAL-LICENSE.md` now ships in the wheel and sdist (the
+  bundled NOTICE references it); the sdist also includes `CHANGELOG.md` and
+  `CITATION.cff`.
+
+### Added
+
+- Python 3.13 support (classifier and CI matrix).
 
 ## [0.6.1] - 2026-07-06
 

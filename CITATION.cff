@@ -13,7 +13,7 @@ authors:
     given-names: Kai
     email: kai.zheng@mrv-lib.org
     affiliation: ModelGuard Lab
-version: "0.6.1"
+version: "0.7.0"
 date-released: "2026-07-06"
 url: "https://mrv-lib.org"
 repository-code: "https://github.com/modelguard-lab/mrv-lib"

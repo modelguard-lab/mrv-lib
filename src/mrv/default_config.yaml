@@ -10,7 +10,7 @@
 #   mrv download config.yaml         # download data only
 #
 # Resolution invariance (Paper 2) is labels-first: fit your own regime models at
-# each frequency and call mrv.validate_res(labels=...) from the Python API.
+# each frequency and call mrv.pipeline.validate_res(labels=...) from the Python API.
 #
 # Override by passing a custom YAML path.
 

@@ -25,7 +25,7 @@ def ohlcv_df():
 
 @pytest.fixture
 def ohlcv_5m():
-    """Synthetic 5m OHLCV DataFrame (20 bdays × 78 bars)."""
+    """Synthetic 5m OHLCV DataFrame (20 bdays x 78 bars)."""
     return make_ohlcv_5m(20)
 
 

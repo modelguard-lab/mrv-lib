@@ -9,7 +9,7 @@
 #   mrv init                         # scaffold a fresh config.yaml
 #
 # Resolution invariance (Paper 2) is labels-first: fit your own regime models at
-# each frequency and call mrv.validate_res(labels=...) from the Python API.
+# each frequency and call mrv.pipeline.validate_res(labels=...) from the Python API.
 #
 # Override by passing a custom YAML path.
 
@@ -17,7 +17,7 @@
 # Download: data source, asset universe, and time range
 # -----------------------------------------------------------------------------
 # source: yahoo (free, no account) or ib (requires IB Gateway running)
-# Each symbol × freq pair is saved as e.g. SPY_1d.csv, SPY_1h.csv.
+# Each symbol x freq pair is saved as e.g. SPY_1d.csv, SPY_1h.csv.
 
 download:
   # Data source: yahoo | ib
@@ -94,7 +94,7 @@ normalize:
 #   rep: Representation Invariance (Paper 1) -- same asset, different factor sets
 #        (run via `mrv run config.yaml rep`)
 #   res: Resolution Invariance (Paper 2) -- same asset, different frequencies
-#        (labels-first: call mrv.validate_res(labels=...) from the Python API)
+#        (labels-first: call mrv.pipeline.validate_res(labels=...) from the Python API)
 #
 # assets: symbol -> path(s) to price CSV(s)
 #   rep: single CSV per asset (base frequency)

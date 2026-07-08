@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 import shutil
 import subprocess
@@ -68,11 +69,6 @@ def _ari_table(labels: list, values: list, threshold: float = 0.65) -> str:
 # Conditional block engine
 # ---------------------------------------------------------------------------
 
-_COND_RE = re.compile(
-    r"%% (IF_\w+|ELIF_\w+|ELSE|ENDIF)\s*\n",
-)
-
-
 def _eval_conditionals(text: str, flags: Dict[str, bool]) -> str:
     """
     Process conditional blocks. Supports:
@@ -107,8 +103,15 @@ def _eval_conditionals(text: str, flags: Dict[str, bool]) -> str:
             parent_active, prev_consumed = stack[-1]
             active = parent_active and not prev_consumed
         elif stripped == "%% ENDIF":
-            stack.pop()
-            active = all(s[0] for s in stack) if stack else True
+            # Restore *active* to the context that was in effect before this IF
+            # opened. The frame's first element is exactly that parent-active
+            # state (parent-active AND every ancestor branch taken), so a nested
+            # conditional inside a non-taken outer branch cannot re-enable output.
+            if stack:
+                parent_active, _ = stack.pop()
+                active = parent_active
+            else:
+                active = True
         else:
             if active:
                 result.append(line)
@@ -151,14 +154,28 @@ def _expand_assets(text: str, data: Dict[str, Any]) -> str:
     for name, a in assets.items():
         ari_data = a["ari_matrix"]
         mean_ari = _asset_mean_ari(a, is_res)
-        color = "mrvred" if mean_ari < ari_threshold else "mrvgreen"
+        ari_is_nan = not math.isfinite(mean_ari)
+        if ari_is_nan:
+            # Insufficient data: the mean ARI is NaN/None. A bare
+            # ``nan < threshold`` is False, which would fail open to a green
+            # "Pass"; render a neutral N/A instead so this cannot masquerade as
+            # a pass while the dashboard shows a fail.
+            color = "mrvgray"
+        else:
+            color = "mrvred" if mean_ari < ari_threshold else "mrvgreen"
 
         if is_res:
             # Resolution invariance: no ordering layer, no min-ARI key.
             n_units = len(a.get("frequencies", ari_data.get("labels", [])))
             min_ari = mean_ari
             mean_sp_str = "N/A"
-            if mean_ari < ari_threshold:
+            if ari_is_nan:
+                finding = (
+                    f"\\textcolor{{mrvgray}}{{\\textbf{{N/A: insufficient data}}}}: "
+                    f"cross-frequency ARI could not be computed for {_tex(name)} "
+                    f"(too few aligned observations)."
+                )
+            elif mean_ari < ari_threshold:
                 finding = (
                     f"\\textcolor{{mrvred}}{{\\textbf{{Partition: FAIL}}}}: "
                     f"cross-frequency ARI = {mean_ari:.3f} "
@@ -171,6 +188,16 @@ def _expand_assets(text: str, data: Dict[str, Any]) -> str:
                     f"cross-frequency ARI = {mean_ari:.3f}; "
                     f"acceptable stability for {_tex(name)}."
                 )
+        elif ari_is_nan:
+            n_units = a.get("n_factor_sets", a.get("n_specs", 0))
+            min_ari = mean_ari
+            mean_sp = a.get("mean_spearman", float("nan"))
+            mean_sp_str = f"{mean_sp:.4f}" if math.isfinite(mean_sp) else "N/A"
+            finding = (
+                f"\\textcolor{{mrvgray}}{{\\textbf{{N/A: insufficient data}}}}: "
+                f"mean ARI could not be computed for {_tex(name)} "
+                f"(too few observations)."
+            )
         else:
             n_units = a.get("n_factor_sets", a.get("n_specs", 0))
             min_ari = float(a.get("min_ari", mean_ari))
@@ -204,8 +231,11 @@ def _expand_assets(text: str, data: Dict[str, Any]) -> str:
         b = b.replace("{{ASSET_NAME}}", _tex(name))
         b = b.replace("{{N_OBS}}", f"{a.get('n_obs', 0):,}")
         b = b.replace("{{N_FACTOR_SETS}}", str(n_units))
-        b = b.replace("{{MEAN_ARI}}", f"{mean_ari:.4f}")
-        b = b.replace("{{MIN_ARI}}", f"{min_ari:.4f}")
+        b = b.replace("{{MEAN_ARI}}", "N/A" if ari_is_nan else f"{mean_ari:.4f}")
+        b = b.replace(
+            "{{MIN_ARI}}",
+            "N/A" if not math.isfinite(min_ari) else f"{min_ari:.4f}",
+        )
         b = b.replace("{{MEAN_SPEARMAN}}", mean_sp_str)
         b = b.replace("{{ARI_COLOR}}", color)
         b = b.replace(
@@ -247,6 +277,10 @@ def _render(template: str, data: Dict[str, Any]) -> str:
         "ORDERING_PASS": ordering_pass,
         "ORDERING_FAIL": not ordering_pass,
         "PARTITION_FAIL_ORDERING_PASS": (not partition_pass) and ordering_pass,
+        # Resolution invariance has no ordering / Spearman layer; the template
+        # uses IS_REP to gate the ordering row and ordering methodology prose.
+        "IS_RES": is_res,
+        "IS_REP": not is_res,
     }
 
     # Step 1: Evaluate conditionals
@@ -279,7 +313,13 @@ def _render(template: str, data: Dict[str, Any]) -> str:
     dash_rows = ""
     for name, a in assets.items():
         a_ari = _asset_mean_ari(a, is_res)
-        ac = "mrvred" if a_ari < ari_threshold else "mrvgreen"
+        if math.isfinite(a_ari):
+            ac = "mrvred" if a_ari < ari_threshold else "mrvgreen"
+            a_ari_str = f"{a_ari:.3f}"
+        else:
+            # Insufficient data: neutral gray, never a green fail-open.
+            ac = "mrvgray"
+            a_ari_str = "N/A"
         if is_res:
             sp_cell = "N/A"
             sc = "mrvgray"
@@ -293,7 +333,7 @@ def _render(template: str, data: Dict[str, Any]) -> str:
         n_obs_disp = a.get("n_obs", 0)
         dash_rows += (
             f"{_tex(name)} & "
-            f"\\textcolor{{{ac}}}{{\\textbf{{{a_ari:.3f}}}}} & "
+            f"\\textcolor{{{ac}}}{{\\textbf{{{a_ari_str}}}}} & "
             f"{sp_cell} & "
             f"{n_obs_disp:,} & {ps} & {os_} \\\\\n"
         )

@@ -29,7 +29,7 @@ __all__ = [
 ]
 
 
-# ── Leave-one-out factor attribution (rep) ───────────────────────────────────
+# -- Leave-one-out factor attribution (rep) -----------------------------------
 
 def loo_factor_attribution(
     labels_dict: Dict[str, np.ndarray],
@@ -49,7 +49,7 @@ def loo_factor_attribution(
             "summary": "..."
         }
 
-    A positive delta means removing set *i* **improves** ARI → set *i*
+    A positive delta means removing set *i* **improves** ARI -> set *i*
     is a disagreement driver.
     """
     keys = list(labels_dict.keys())
@@ -93,7 +93,7 @@ def loo_factor_attribution(
     }
 
 
-# ── Frequency-pair decomposition (res) ───────────────────────────────────────
+# -- Frequency-pair decomposition (res) ---------------------------------------
 
 def freq_pair_attribution(
     ari_matrix: pd.DataFrame,
@@ -118,7 +118,7 @@ def freq_pair_attribution(
     return pairs
 
 
-# ── Temporal hotspot detection ───────────────────────────────────────────────
+# -- Temporal hotspot detection -----------------------------------------------
 
 def temporal_attribution(
     labels_a: pd.Series,
@@ -183,7 +183,7 @@ def temporal_attribution(
     return pd.DataFrame(rows)
 
 
-# ── Summary generation ───────────────────────────────────────────────────────
+# -- Summary generation -------------------------------------------------------
 
 def generate_attribution_summary(
     attr_results: Dict[str, Any],

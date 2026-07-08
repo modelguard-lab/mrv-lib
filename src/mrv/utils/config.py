@@ -11,6 +11,8 @@ from typing import Any, Dict, List, Optional
 
 import yaml  # type: ignore[import-untyped]
 
+from mrv.exceptions import MrvConfigError
+
 __all__ = [
     "load",
     "get_data_dir",
@@ -52,7 +54,7 @@ def load(path: Optional[str | Path] = None) -> Dict[str, Any]:
     with open(cfg_path, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
     if not isinstance(cfg, dict):
-        raise ValueError(f"Invalid config (expected dict): {cfg_path}")
+        raise MrvConfigError(f"Invalid config (expected dict): {cfg_path}")
     return cfg
 
 

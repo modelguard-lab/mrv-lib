@@ -6,6 +6,9 @@
 /data/
 /logs/
 /reports/
+# Timestamped report dirs written anywhere (e.g. examples/reports/ when
+# notebooks run); root /reports/ above is not enough to cover nested output.
+**/reports/
 
 # Scratch / e2e artefact directories (run-specific, not for version control)
 _e2e_out/

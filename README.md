@@ -25,32 +25,71 @@ pip install mrv-lib
 
 ## Quick start
 
-Labels-first API (supply labels from your own model):
+The recommended public Python API lives at the top level of the `mrv` package.
+You supply a `model_fn` (features to integer labels) plus the admissible set of
+specifications, and mrv returns a typed result. mrv only measures agreement; it
+never fits a model itself.
+
+Representation invariance (Paper 1) across feature representations:
 
 ```python
-from mrv.pipeline import validate_rep
+import numpy as np
+import mrv
 
-result = validate_rep(labels={
-    "SPY": {
-        "vol+dd+var":   labels_a,  # 1-D integer ndarray of regime labels
-        "vol+var+cvar": labels_b,
-    }
-})
-print(result["assets"]["SPY"]["mean_ari"])
+rng = np.random.default_rng(42)
+n = 200
+base = rng.integers(0, 3, n)
+labels_a = base.copy()
+labels_b = base.copy()
+flip = rng.random(n) < 0.10
+labels_b[flip] = rng.integers(0, 3, flip.sum())   # small perturbation
+returns = rng.standard_normal(n) * 0.01
+
+result = mrv.rep_invariance_validator(
+    model_fn=lambda x: x,   # passthrough: supply pre-computed labels directly
+    admissible_class={"vol+dd+var": labels_a, "vol+var+cvar": labels_b},
+    returns=returns,        # optional: enables the Spearman ordering check
+    K=3,                    # number of regime states
+)
+print(result.summary())
+print("mean ARI:", result.mean_ari["asset"])
+print("partition passes:", result.passes_partition["asset"])
 ```
 
-Resolution invariance across frequencies:
+Already fit your own regime model? Wrap the labels with the passthrough
+`model_fn=lambda x: x` as above, or pass a real callable that maps a feature
+matrix to integer labels.
+
+Resolution invariance (Paper 2) across frequencies:
 
 ```python
-from mrv.pipeline import validate_res
+import pandas as pd
+import numpy as np
+import mrv
 
-result = validate_res(labels={
-    "SPY": {"5m": labels_5m, "15m": labels_15m, "1h": labels_1h, "1d": labels_1d}
-})
+rng = np.random.default_rng(0)
+idx = pd.date_range("2026-01-05 09:30", periods=480, freq="5min",
+                    tz="America/New_York")
+labels_5m  = pd.Series(rng.integers(0, 2, 480), index=idx, dtype=int)
+labels_15m = labels_5m.iloc[::3].copy()
+
+result = mrv.res_invariance_validator(
+    model_fn=lambda s: s,   # passthrough: supply pre-computed labels per frequency
+    resolution_set={"SPY": {"5m": labels_5m, "15m": labels_15m}},
+    spec=mrv.ResolutionSpec(freqs=("5m", "15m"), intraday_freqs=("5m", "15m")),
+    run_permutation=False,
+)
+print(result.summary())
+print(result.ari_matrix["SPY"].round(3))
+print("overall mean ARI:", result.overall_mean_ari["SPY"])
 ```
 
-mrv only measures agreement; it never fits a model itself. Fit your own regime
-model and pass the resulting integer labels.
+The typed results (`RepInvarianceResult` / `ResInvarianceResult`) expose
+`.summary()` plus attributes such as `.ari_matrix`, `.overall_mean_ari`,
+`.passes_partition`, and `.intraday_overall_ari_gap`. To feed a real model, pass
+a `model_fn` that fits your regime model and returns integer labels. See
+`examples/paper1_representation_invariance.ipynb` and
+`examples/paper2_resolution_invariance.ipynb` for end-to-end walkthroughs.
 
 ## Logging
 
@@ -85,9 +124,13 @@ mrv-lib/
 |   |-- paper2_resolution_invariance.ipynb
 |   `-- example_california_housing.ipynb
 |-- src/mrv/
-|   |-- pipeline.py          # validate_rep() / validate_res() + convenience wrappers
-|   |-- invariance/          # Functional API + typed results (rep, res)
-|   |-- data/                # Data loading, factors, normalization (optional)
+|   |-- invariance/          # Recommended public Python API + typed results (rep, res)
+|   |-- pipeline.py          # Internal labels-first backend behind the `mrv` CLI
+|   |-- data/                # Data modules (optional)
+|   |   |-- reader.py        # CSV / OHLCV loading
+|   |   |-- factors.py       # Factor / feature engineering
+|   |   |-- normalize.py     # Normalization (rolling z-score, minmax)
+|   |   `-- download_yahoo.py # Yahoo Finance data download
 |   |-- models/              # GMM/HMM fitting
 |   |-- templates/
 |   |   `-- template.tex     # Specification-invariance report template (rep + res)

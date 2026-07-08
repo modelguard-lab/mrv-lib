@@ -14,12 +14,12 @@ Key capabilities shipped:
 - Business impact function (`impact_fn`) and disagreement attribution (LOO / frequency-pair / temporal)
 - Specification-invariance report generation (`report()`: result JSON to PDF via LaTeX), covering
   both the representation and resolution tests
-- GitHub Actions CI on Linux (Python 3.9 / 3.10 / 3.12)
+- GitHub Actions CI on Linux (Python 3.9 / 3.10 / 3.11 / 3.12 / 3.13)
+- Sphinx documentation site (`docs/`, wired via `docs/index.rst`)
+- `examples` extras group (`pip install mrv-lib[examples]`)
 
 ## Planned
 
-- Sphinx documentation site.
-- `examples` extras group (`pip install mrv-lib[examples]`).
 - Structured logging adapter for enterprise SIEM integration.
 - REST API wrapper for production ML monitoring deployments.
 - Zenodo DOI and formal academic citation support.

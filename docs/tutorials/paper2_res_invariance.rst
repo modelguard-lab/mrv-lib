@@ -22,53 +22,47 @@ than daily-vs-intraday pairs.
 four frequencies (``5m``, ``15m``, ``1h``, ``1d``) and the two
 intraday-only frequencies for the within-intraday excess statistic.
 
-Step 1: build per-frequency label dicts
------------------------------------------
+The validator is *model-driven*: you supply a ``model_fn`` callable that maps a
+price :class:`pandas.Series` (with a ``DatetimeIndex``) to integer regime
+labels, plus a ``resolution_set`` of the shape ``{asset: {freq: price_series}}``.
+The validator fits ``model_fn`` once per (asset, frequency), aligns the labels
+onto the finest resolution, and cross-compares them.
 
-The validator expects a nested dict:
-``{asset: {freq: label_array}}``.
+Step 1: build the per-frequency price panel
+---------------------------------------------
+
+Each inner value is a price :class:`pandas.Series` with a ``DatetimeIndex`` at
+that frequency (not a bare numpy array). Here we synthesise 5-minute bars and
+resample up to the coarser frequencies.
 
 .. code-block:: python
 
     import numpy as np
     import pandas as pd
+    from sklearn.mixture import GaussianMixture
 
-    rng = np.random.default_rng(42)
-    K = 3
-    N_DAILY = 250
+    np.random.seed(42)
+    bars_per_day = 78          # 09:30-16:00, 5-minute bars
+    n_days = 15
 
-    def make_label_seq(n, seed):
-        rng_l = np.random.default_rng(seed)
-        labels = np.zeros(n, dtype=int)
-        state = 0
-        trans = {0: [0.88, 0.08, 0.04],
-                 1: [0.10, 0.78, 0.12],
-                 2: [0.06, 0.14, 0.80]}
-        for i in range(1, n):
-            state = rng_l.choice(K, p=trans[state])
-            labels[i] = state
-        return labels
+    idx = None
+    for d in pd.bdate_range("2026-01-05", periods=n_days):
+        start = pd.Timestamp(f"{d.date()} 09:30", tz="America/New_York")
+        times = pd.date_range(start, periods=bars_per_day, freq="5min")
+        idx = times if idx is None else idx.append(times)
 
-    # 1d bars (250 observations)
-    labels_1d = make_label_seq(N_DAILY, seed=0)
+    regime = np.random.choice([0, 1], size=len(idx), p=[0.7, 0.3])
+    returns = np.where(regime == 0,
+                       np.random.randn(len(idx)) * 0.001,
+                       np.random.randn(len(idx)) * 0.004)
+    close_5m = pd.Series(100.0 * np.exp(np.cumsum(returns)), index=idx)
 
-    # 1h bars (approx 8x more observations for equity session)
-    labels_1h = make_label_seq(N_DAILY * 8, seed=1)
+    RULE = {"5m": None, "15m": "15min", "1h": "60min", "1d": "1D"}
+    price_map = {}
+    for freq, rule in RULE.items():
+        price_map[freq] = close_5m if rule is None else close_5m.resample(rule).last().dropna()
 
-    # 15m bars
-    labels_15m = make_label_seq(N_DAILY * 26, seed=2)
-
-    # 5m bars
-    labels_5m = make_label_seq(N_DAILY * 78, seed=3)
-
-    resolution_set = {
-        "SPY": {
-            "5m":  labels_5m,
-            "15m": labels_15m,
-            "1h":  labels_1h,
-            "1d":  labels_1d,
-        }
-    }
+    resolution_set = {"SPY": price_map}
 
 Step 2: run the validator
 --------------------------
@@ -77,42 +71,67 @@ Step 2: run the validator
 
     from mrv.invariance import res_invariance_validator, ResolutionSpec
 
+    def label_model(prices):
+        """Fit a 2-state vol regime and return int labels on the input index."""
+        log_ret = np.log(prices / prices.shift(1))
+        vol = log_ret.rolling(20, min_periods=2).std()
+        log_vol = np.log(vol.replace(0, np.nan)).dropna()
+
+        labels = pd.Series(0, index=prices.index, dtype=int)
+        if len(log_vol) >= 4:
+            X = log_vol.values.reshape(-1, 1)
+            gmm = GaussianMixture(n_components=2, random_state=42, n_init=5).fit(X)
+            crisis = int(np.argmax(gmm.means_.ravel()))
+            labels.loc[log_vol.index] = (gmm.predict(X) == crisis).astype(int)
+        return labels
+
     result = res_invariance_validator(
-        model_fn=None,
+        model_fn=label_model,
         resolution_set=resolution_set,
         spec=ResolutionSpec(),    # default Paper 2 four-frequency panel
+        run_permutation=True,
+        n_perm=500,
+        seed=42,
     )
 
-    result.summary()
+    print(result.summary())
     print("ARI matrix (SPY):", result.ari_matrix["SPY"])
     print("AMI matrix (SPY):", result.ami_matrix["SPY"])
 
-Within-intraday excess
------------------------
+Intraday-vs-overall ARI gap
+---------------------------
 
-Paper 2 shows that *within-intraday* ARI (e.g., 5m vs 15m) is consistently
-higher than *daily-vs-intraday* ARI (1h or 15m vs 1d). The
-``within_intraday_excess`` field reports the difference:
+On your own labels, within-intraday ARI (e.g., 5m vs 15m) is often higher than
+daily-vs-intraday ARI (1h or 15m vs 1d). The ``intraday_overall_ari_gap`` field
+reports this difference (intraday mean ARI minus overall mean ARI):
 
 .. code-block:: python
 
-    print("Within-intraday excess (SPY):",
-          result.within_intraday_excess.get("SPY"))
+    print("Intraday-vs-overall ARI gap (SPY):",
+          result.intraday_overall_ari_gap.get("SPY"))
 
 A positive value means the model is more consistent among intraday frequencies
-than it is when compared to the daily bar -- the typical finding from Paper 2.
+than it is when compared to the daily bar. This library field is a plain
+agreement gap on your own labels; it is NOT Paper 2's headline "within-intraday
+excess" (empirical intraday ARI minus a simulated MS-Gaussian baseline), which
+this library does not compute.
 
-Permutation p-values
----------------------
+Permutation p-value
+-------------------
 
-The validator computes permutation p-values for each frequency pair to guard
-against inflated ARI from small sample sizes:
+The validator computes one overall permutation p-value per asset (for the mean
+off-diagonal ARI) to guard against inflated agreement from small samples.
+``perm_pvalue[asset]`` is a single ``float`` (or ``None`` when the sample is too
+small); ``perm_null_ci[asset]`` is the matching 95% null CI:
 
 .. code-block:: python
 
-    if result.perm_pvalue:
-        for pair, pv in result.perm_pvalue.get("SPY", {}).items():
-            print(f"  {pair}: p={pv:.4f}")
+    pval = result.perm_pvalue.get("SPY")
+    ci = result.perm_null_ci.get("SPY")
+    if pval is not None:
+        print(f"SPY overall permutation p-value: {pval:.4f}")
+        if ci is not None:
+            print(f"Null 95% CI: [{ci[0]:.4f}, {ci[1]:.4f}]")
 
 Using PAPER2_FREQS
 -------------------
@@ -139,10 +158,12 @@ Interpreting results
 +------------------------------+------------------------------------------+
 | ``ami_matrix[asset]``        | AMI robustness table (Paper 2 Table S1). |
 +------------------------------+------------------------------------------+
-| ``within_intraday_excess``   | Intraday mean ARI minus overall mean ARI |
-|                              | (positive = within-intraday more stable).|
+| ``intraday_overall_ari_gap`` | Intraday mean ARI minus overall mean ARI |
+|   ``[asset]``                | (positive = within-intraday more stable).|
 +------------------------------+------------------------------------------+
-| ``perm_pvalue``              | Permutation p-values per pair per asset. |
+| ``perm_pvalue[asset]``       | Single overall permutation p-value       |
+|                              | (``float`` or ``None``) for the mean     |
+|                              | off-diagonal ARI.                        |
 +------------------------------+------------------------------------------+
 
 See also

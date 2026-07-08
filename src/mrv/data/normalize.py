@@ -12,6 +12,8 @@ from typing import Any, Dict, Optional
 import numpy as np
 import pandas as pd
 
+from mrv.exceptions import MrvConfigError
+
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -118,4 +120,4 @@ def normalize(
     if mode == "minmax":
         return minmax(df, window)
 
-    raise ValueError(f"Unknown normalization mode: {mode!r}")
+    raise MrvConfigError(f"Unknown normalization mode: {mode!r}")

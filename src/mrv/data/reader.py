@@ -14,6 +14,8 @@ from typing import List, Optional
 
 import pandas as pd
 
+from mrv.exceptions import MrvValidationError
+
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -38,7 +40,7 @@ def _infer_price_column(df: pd.DataFrame) -> str:
         for key, original in lowered.items():
             if token in key:
                 return original
-    raise ValueError(f"Could not infer price column from: {df.columns.tolist()}")
+    raise MrvValidationError(f"Could not infer price column from: {df.columns.tolist()}")
 
 
 # ---------------------------------------------------------------------------
@@ -186,4 +188,4 @@ def resample_ohlc(df: pd.DataFrame, freq: str, tz: str = "America/New_York") -> 
         res.index = res.index + pd.Timedelta(hours=16)
         return res
 
-    raise ValueError(f"Unsupported frequency: {freq}")
+    raise MrvValidationError(f"Unsupported frequency: {freq}")

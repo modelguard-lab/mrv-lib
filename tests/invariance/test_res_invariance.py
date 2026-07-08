@@ -117,10 +117,15 @@ class TestResInvarianceResult:
         mat = result.ari_matrix["SPY"].values
         assert np.allclose(mat, mat.T, equal_nan=True)
 
-    def test_overall_mean_ari_exists(self):
+    def test_overall_mean_ari_equals_offdiag_mean(self):
+        """overall_mean_ari must equal the mean of the ARI matrix off-diagonal,
+        not merely be present/finite."""
         result = self._make_result()
         v = result.overall_mean_ari["SPY"]
         assert v is not None and np.isfinite(v)
+        mat = result.ari_matrix["SPY"].values.astype(float)
+        expected = float(mat[np.triu_indices(mat.shape[0], k=1)].mean())
+        assert v == pytest.approx(expected, abs=1e-12)
 
     def test_passes_partition_type(self):
         result = self._make_result()
@@ -192,23 +197,23 @@ class TestResInvarianceValidator:
         ari = result.overall_mean_ari["SPY"]
         assert ari is not None and abs(ari) < 0.2
 
-    def test_within_intraday_excess_computed(self):
+    def test_intraday_overall_ari_gap_computed(self):
         from mrv.invariance import ResolutionSpec, res_invariance_validator
         # 4-freq: intraday pairs among (5m, 15m, 1h); daily pair adds noise
         rs = _make_resolution_set(["SPY"], n_bars=400, freqs=("5m", "15m", "1h", "1d"), seed=0)
         spec = ResolutionSpec()  # default Paper 2 spec
         result = res_invariance_validator(_passthrough, rs, spec=spec, run_permutation=False)
-        excess = result.within_intraday_excess["SPY"]
+        excess = result.intraday_overall_ari_gap["SPY"]
         # excess should be a finite float (positive or negative)
         assert excess is not None and np.isfinite(excess)
 
-    def test_within_intraday_excess_identity(self):
-        """When intraday_freqs == all freqs, excess must be zero."""
+    def test_intraday_overall_ari_gap_identity(self):
+        """When intraday_freqs == all freqs, gap must be zero."""
         from mrv.invariance import ResolutionSpec, res_invariance_validator
         rs = _make_resolution_set(["SPY"], n_bars=300, freqs=("5m", "15m"), seed=1)
         spec = ResolutionSpec(freqs=("5m", "15m"), intraday_freqs=("5m", "15m"))
         result = res_invariance_validator(_passthrough, rs, spec=spec, run_permutation=False)
-        excess = result.within_intraday_excess["SPY"]
+        excess = result.intraday_overall_ari_gap["SPY"]
         # overall == intraday when intraday covers all freqs
         assert excess is not None and abs(excess) < 1e-9
 
@@ -266,6 +271,151 @@ class TestResInvarianceValidator:
 # ---------------------------------------------------------------------------
 
 
+class TestResSpecLocking:
+    """Spec-locking tests: guard the permutation seed, the within-intraday
+    excess sign, and the partition pass-flag semantics against regressions.
+    """
+
+    def test_permutation_reproducible_and_seed_sensitive(self):
+        """Same seed -> identical p-value and null CI; different seed -> different CI."""
+        from mrv.invariance import ResolutionSpec, res_invariance_validator
+
+        rs = _make_resolution_set(["SPY"], n_bars=300, freqs=("5m", "15m"), seed=11)
+        spec = ResolutionSpec(freqs=("5m", "15m"), intraday_freqs=("5m", "15m"))
+        kw = dict(
+            model_fn=_passthrough,
+            resolution_set=rs,
+            spec=spec,
+            run_permutation=True,
+            n_perm=200,
+        )
+
+        r1 = res_invariance_validator(seed=42, **kw)
+        r2 = res_invariance_validator(seed=42, **kw)
+        assert r1.perm_pvalue["SPY"] == r2.perm_pvalue["SPY"]
+        assert r1.perm_null_ci["SPY"] == r2.perm_null_ci["SPY"]
+
+        r3 = res_invariance_validator(seed=7, **kw)
+        # A different seed must produce a different null distribution (guards
+        # against an ignored seed argument).
+        assert r3.perm_null_ci["SPY"] != r1.perm_null_ci["SPY"]
+
+    def test_intraday_overall_ari_gap_positive_when_intraday_agree(self):
+        """5m/15m/1h identical, 1d independent -> intraday ARI > overall, gap > 0."""
+        from mrv.invariance import ResolutionSpec, res_invariance_validator
+
+        idx = pd.date_range(
+            "2026-01-05 09:30", periods=400, freq="5min", tz="America/New_York"
+        )
+        shared = pd.Series(
+            np.random.RandomState(0).randint(0, 2, 400), index=idx, dtype=int
+        )
+        daily = pd.Series(
+            np.random.RandomState(999).randint(0, 2, 400), index=idx, dtype=int
+        )
+        rs = {
+            "SPY": {
+                "5m": shared.copy(),
+                "15m": shared.copy(),
+                "1h": shared.copy(),
+                "1d": daily,
+            }
+        }
+        spec = ResolutionSpec()  # 4-freq panel; intraday = (5m, 15m, 1h)
+        result = res_invariance_validator(
+            _passthrough, rs, spec=spec, run_permutation=False
+        )
+        intra = result.intraday_mean_ari["SPY"]
+        overall = result.overall_mean_ari["SPY"]
+        excess = result.intraday_overall_ari_gap["SPY"]
+        assert intra is not None and overall is not None and excess is not None
+        assert intra > overall
+        assert excess > 0
+
+    def test_passes_partition_true_on_identical_false_on_random(self):
+        """High-ARI (identical) case passes; low-ARI (random) case fails."""
+        from mrv.invariance import ResolutionSpec, res_invariance_validator
+
+        spec = ResolutionSpec(freqs=("5m", "15m", "1h"), intraday_freqs=("5m", "15m", "1h"))
+
+        idx = pd.date_range(
+            "2026-01-05 09:30", periods=300, freq="5min", tz="America/New_York"
+        )
+        shared = pd.Series(
+            np.random.RandomState(1).randint(0, 2, 300), index=idx, dtype=int
+        )
+        rs_hi = {"SPY": {"5m": shared.copy(), "15m": shared.copy(), "1h": shared.copy()}}
+        hi = res_invariance_validator(_passthrough, rs_hi, spec=spec, run_permutation=False)
+        assert hi.passes_partition["SPY"]
+
+        rs_lo = _make_resolution_set(["SPY"], n_bars=500, freqs=("5m", "15m", "1h"), seed=7)
+        lo = res_invariance_validator(_passthrough, rs_lo, spec=spec, run_permutation=False)
+        assert not lo.passes_partition["SPY"]
+
+
+class TestResFreqsDerivation:
+    """F6: freqs and intraday_freqs reflect the actual matrix, not the spec."""
+
+    def test_freqs_and_intraday_narrowed_to_actual(self):
+        from mrv.invariance import ResolutionSpec, res_invariance_validator
+
+        # Default 4-panel spec, but only two frequencies supplied.
+        rs = _make_resolution_set(["SPY"], n_bars=200, freqs=("5m", "15m"))
+        result = res_invariance_validator(
+            _passthrough, rs, spec=ResolutionSpec(), run_permutation=False
+        )
+        assert result.freqs == ("5m", "15m")
+        assert tuple(result.ari_matrix["SPY"].columns) == ("5m", "15m")
+        # intraday default (5m, 15m, 1h) narrowed to the two present frequencies.
+        assert result.intraday_freqs == ("5m", "15m")
+
+    def test_summary_reports_narrowed_freqs(self):
+        from mrv.invariance import ResolutionSpec, res_invariance_validator
+
+        rs = _make_resolution_set(["SPY"], n_bars=200, freqs=("5m", "15m"))
+        result = res_invariance_validator(
+            _passthrough, rs, spec=ResolutionSpec(), run_permutation=False
+        )
+        s = result.summary()
+        # The summary must not advertise 1h/1d that were never computed.
+        assert "1h" not in s and "1d" not in s
+
+
+class TestResPartitionBoundary:
+    """T-A: pin the >= (inclusive) direction of the ARI partition gate."""
+
+    def _fake_results(self, overall):
+        ari_df = pd.DataFrame(
+            np.eye(2), index=["5m", "15m"], columns=["5m", "15m"]
+        )
+        return {
+            "SPY": {
+                "frequencies": ["5m", "15m"],
+                "overall_mean_ari": overall,
+                "ari_matrix": ari_df,
+            }
+        }
+
+    def test_partition_pass_inclusive_at_threshold(self):
+        from mrv.validator.metrics import ARI_THRESHOLD
+        from mrv.validator.res import ResValidator
+
+        v = ResValidator()
+        # Exactly at the threshold must PASS (>=, not >).
+        j_at = v._build_json(self._fake_results(ARI_THRESHOLD), {})
+        assert j_at["assets"]["SPY"]["partition_pass"] is True
+        assert j_at["partition_pass"] is True
+
+    def test_partition_fail_one_epsilon_below(self):
+        from mrv.validator.metrics import ARI_THRESHOLD
+        from mrv.validator.res import ResValidator
+
+        v = ResValidator()
+        j_below = v._build_json(self._fake_results(ARI_THRESHOLD - 1e-9), {})
+        assert j_below["assets"]["SPY"]["partition_pass"] is False
+        assert j_below["partition_pass"] is False
+
+
 class TestInvariancePublicSurface:
     def test_all_names_importable(self):
         from mrv import invariance
@@ -281,3 +431,86 @@ class TestInvariancePublicSurface:
     def test_paper2_intraday_freqs_constant(self):
         from mrv.invariance import PAPER2_INTRADAY_FREQS
         assert PAPER2_INTRADAY_FREQS == ("5m", "15m", "1h")
+
+
+class TestResCrossEntryPointEquality:
+    """T-P1a: the functional validator and the pipeline CLI backend share one
+    orchestration core, so the same labels must yield the same core numbers.
+    """
+
+    def test_functional_matches_pipeline_res(self, tmp_path):
+        import mrv
+        import mrv.pipeline
+        from mrv.invariance import ResolutionSpec
+
+        # Shared labels dict at three intraday frequencies (one asset).
+        idx = pd.date_range(
+            "2026-01-05 09:30", periods=300, freq="5min", tz="America/New_York"
+        )
+        rng = np.random.RandomState(123)
+        labels = {
+            "SPY": {
+                f: pd.Series(rng.randint(0, 2, 300), index=idx, dtype=int)
+                for f in ("5m", "15m", "1h")
+            }
+        }
+
+        # Functional entry point (defaults: run_permutation=True, n_perm=500, seed=42).
+        spec = ResolutionSpec(freqs=("5m", "15m", "1h"), intraday_freqs=("5m", "15m", "1h"))
+        func = mrv.res_invariance_validator(
+            model_fn=lambda s: s,
+            resolution_set=labels,
+            spec=spec,
+        )
+        # Pipeline CLI backend: analyze_labels defaults are also 500/42.
+        cfg = {"validator": {"report_dir": str(tmp_path), "report_name": "t_{date}", "res": {}}}
+        pipe = mrv.pipeline.validate_res(labels=labels, cfg=cfg)
+
+        f_ari = func.overall_mean_ari["SPY"]
+        p_ari = pipe["assets"]["SPY"]["overall_mean_ari"]
+        assert f_ari == pytest.approx(p_ari, abs=1e-12)
+
+        # Permutation p-value: same seed/n_perm through the same core -> equal.
+        f_p = func.perm_pvalue["SPY"]
+        p_p = pipe["assets"]["SPY"]["overall_mean_ari_pvalue_perm"]
+        assert f_p is not None and np.isfinite(f_p)
+        assert p_p is not None and np.isfinite(p_p)
+        assert f_p == pytest.approx(p_p, abs=1e-12)
+
+
+class TestResModelFnBareNdarray:
+    """T-P2c: model_fn may return a bare numpy ndarray (not a Series); the
+    wrapper wraps it onto the input index (src/mrv/invariance/res.py:340-341).
+    """
+
+    def test_ndarray_model_fn_uses_input_index(self):
+        from mrv.invariance import ResolutionSpec, res_invariance_validator
+
+        idx = pd.date_range(
+            "2026-01-05 09:30", periods=250, freq="5min", tz="America/New_York"
+        )
+        rng = np.random.RandomState(7)
+        # Same price path at every freq so labels agree (ARI == 1); model_fn
+        # returns a bare ndarray of labels (no index).
+        base_prices = 100.0 + rng.standard_normal(250).cumsum()
+        rs = {
+            "SPY": {
+                f: pd.Series(base_prices.copy(), index=idx)
+                for f in ("5m", "15m", "1h")
+            }
+        }
+
+        def ndarray_model(prices: pd.Series) -> np.ndarray:
+            return (prices.to_numpy() > prices.to_numpy().mean()).astype(int)
+
+        spec = ResolutionSpec(freqs=("5m", "15m", "1h"), intraday_freqs=("5m", "15m", "1h"))
+        result = res_invariance_validator(
+            ndarray_model, rs, spec=spec, run_permutation=False
+        )
+        mat = result.ari_matrix["SPY"]
+        # 3x3 matrix computed on the full 250-length index (correct length/index).
+        assert mat.shape == (3, 3)
+        assert result.overall_mean_ari["SPY"] is not None
+        # Identical prices per freq -> identical labels -> ARI == 1 off-diagonal.
+        off = mat.values[np.triu_indices(3, k=1)]
+        assert all(v == pytest.approx(1.0) for v in off)

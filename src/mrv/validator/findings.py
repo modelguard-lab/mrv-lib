@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import yaml  # type: ignore[import-untyped]
 
-from mrv.validator.metrics import ARI_THRESHOLD
+from mrv.validator.metrics import ARI_THRESHOLD, SPEARMAN_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +134,7 @@ def findings_summary(findings: List[Finding]) -> Dict[str, int]:
     return counts
 
 
-# ── Internal ─────────────────────────────────────────────────────────────────
+# -- Internal -----------------------------------------------------------------
 
 def _findings_rep(asset: str, r: Dict, date_prefix: str) -> List[Finding]:
     """Generate findings for representation invariance."""
@@ -164,13 +164,14 @@ def _findings_rep(asset: str, r: Dict, date_prefix: str) -> List[Finding]:
         ))
 
     sp = r.get("mean_spearman")
-    if sp is not None and sp < 0.85 and mean_ari is not None and mean_ari >= ARI_THRESHOLD:
+    if (sp is not None and sp < SPEARMAN_THRESHOLD
+            and mean_ari is not None and mean_ari >= ARI_THRESHOLD):
         findings.append(Finding(
             id="",
             severity="Medium",
             title=f"Ordering instability for {asset}",
             description=(
-                f"Mean Spearman correlation = {sp:.3f} (threshold: 0.85). "
+                f"Mean Spearman correlation = {sp:.3f} (threshold: {SPEARMAN_THRESHOLD}). "
                 f"While partition labels are stable, the risk ordering of states "
                 f"differs across representations."
             ),

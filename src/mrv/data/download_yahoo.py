@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from mrv.exceptions import MrvConfigError
 from mrv.utils.config import _normalize_freq
 
 logger = logging.getLogger(__name__)
@@ -34,7 +35,7 @@ def download(cfg: Optional[Dict[str, Any]] = None) -> None:
 
     symbols = dl_cfg.get("symbols", [])
     if not symbols:
-        raise ValueError("No symbols defined in config (download.symbols)")
+        raise MrvConfigError("No symbols defined in config (download.symbols)")
 
     data_dir = Path(dl_cfg.get("data_dir", "data"))
     data_dir.mkdir(parents=True, exist_ok=True)

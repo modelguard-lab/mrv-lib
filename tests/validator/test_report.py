@@ -151,3 +151,119 @@ class TestReportHelpers:
         assert "A" in _eval_conditionals(text, {"A": True, "B": False})
         result_b = _eval_conditionals(text, {"A": False, "B": True})
         assert "B" in result_b and "A" not in result_b
+
+    def test_eval_conditionals_nested_in_untaken_branch(self):
+        """A nested conditional inside a non-taken outer branch must stay
+        suppressed. Regression guard for the ENDIF stack restore: closing the
+        inner block must not re-enable output for the rest of the outer block.
+        """
+        from mrv.validator.report import _eval_conditionals
+        text = (
+            "start\n"
+            "%% IF_A\n"
+            "outer\n"
+            "%% IF_B\n"
+            "inner\n"
+            "%% ENDIF\n"
+            "leaked\n"
+            "%% ENDIF\n"
+            "end"
+        )
+        # A is False: nothing between IF_A and its ENDIF may survive, even
+        # though the inner IF_B is True.
+        out = _eval_conditionals(text, {"A": False, "B": True})
+        assert "outer" not in out
+        assert "inner" not in out
+        assert "leaked" not in out
+        assert "start" in out and "end" in out
+
+        # A is True, B is True: the whole nested block renders.
+        out2 = _eval_conditionals(text, {"A": True, "B": True})
+        assert "outer" in out2 and "inner" in out2 and "leaked" in out2
+
+    def test_eval_conditionals_nested_inner_false(self):
+        """Outer taken, inner not taken: only the inner body is suppressed."""
+        from mrv.validator.report import _eval_conditionals
+        text = (
+            "%% IF_A\nouter\n%% IF_B\ninner\n%% ENDIF\ntail\n%% ENDIF\n"
+        )
+        out = _eval_conditionals(text, {"A": True, "B": False})
+        assert "outer" in out and "tail" in out
+        assert "inner" not in out
+
+
+def _rep_partition_fail_ordering_pass_json():
+    """Paper-1 headline case: partition FAIL, ordering PASS."""
+    return {
+        "test": "representation_invariance",
+        "generated": "2026-07-06T00:00:00",
+        "model": "GMM",
+        "n_states": 3,
+        "date_range": {"start": "2020-01-01", "end": "2020-12-31"},
+        "ari_threshold": 0.65,
+        "spearman_threshold": 0.85,
+        "overall_mean_ari": 0.40,
+        "overall_mean_spearman": 0.90,
+        "partition_pass": False,
+        "ordering_pass": True,
+        "assets": {
+            "SPY": {
+                "n_specs": 2,
+                "n_factor_sets": 2,
+                "n_obs": 200,
+                "mean_ari": 0.40,
+                "min_ari": 0.30,
+                "mean_spearman": 0.90,
+                "partition_pass": False,
+                "ordering_pass": True,
+                "ari_matrix": {
+                    "labels": ["set0", "set1"],
+                    "values": [[1.0, 0.40], [0.40, 1.0]],
+                },
+                "heatmap_png": "SPY.png",
+            }
+        },
+    }
+
+
+class TestReportFindings:
+    def test_partition_fail_ordering_pass_finding(self, tmp_path):
+        """The Paper-1 finding path renders both 'Partition: FAIL' and
+        'Ordering: PASS' in the per-asset finding text.
+        """
+        from mrv.validator.report import generate_report
+
+        run_dir = tmp_path / "rep_finding"
+        run_dir.mkdir()
+        jp = run_dir / "result.json"
+        jp.write_text(json.dumps(_rep_partition_fail_ordering_pass_json()), encoding="utf-8")
+
+        generate_report(jp)
+        content = (run_dir / f"{run_dir.name}.tex").read_text(encoding="utf-8")
+        assert "Partition: FAIL" in content
+        assert "Ordering: PASS" in content
+
+    def test_res_none_ari_renders_neutral_not_pass(self, tmp_path):
+        """A res asset with overall_mean_ari == None must render N/A in neutral
+        gray, never a green 'Pass' (fail-open guard).
+        """
+        from mrv.validator.report import generate_report
+
+        data = _res_result_json()
+        data["assets"]["SPY"]["overall_mean_ari"] = None
+        data["assets"]["SPY"]["partition_pass"] = False
+        data["overall_mean_ari"] = None
+        data["partition_pass"] = False
+
+        run_dir = tmp_path / "res_none"
+        run_dir.mkdir()
+        jp = run_dir / "result.json"
+        jp.write_text(json.dumps(data), encoding="utf-8")
+
+        generate_report(jp)
+        content = (run_dir / f"{run_dir.name}.tex").read_text(encoding="utf-8")
+        # Neutral N/A finding present; no green Pass for this asset; no "nan".
+        assert "insufficient data" in content
+        assert "mrvgray" in content
+        assert "nan" not in content.lower()
+        assert "\\textbf{Pass}" not in content

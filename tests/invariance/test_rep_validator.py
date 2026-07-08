@@ -423,6 +423,37 @@ class TestRepValidatorSemantics:
             )
             assert key[0] in ac and key[1] in ac
 
+    def test_passes_ordering_true_when_spearman_high(self):
+        """Identical monotone specs -> Spearman ~1 -> passes_ordering True."""
+        from mrv.invariance import rep_invariance_validator
+
+        n = 300
+        feat = np.linspace(-3.0, 3.0, n).reshape(-1, 1)
+        ac = {"a": feat.copy(), "b": feat.copy()}
+        returns = feat[:, 0].copy()  # risk proxy monotone in the labelling feature
+
+        def model_fn(f):
+            q = np.quantile(f[:, 0], [1.0 / 3.0, 2.0 / 3.0])
+            return np.digitize(f[:, 0], q).astype(int)
+
+        r = rep_invariance_validator(model_fn, ac, returns=returns, K=3)
+        assert r.passes_ordering["asset"]
+
+    def test_passes_ordering_false_when_spearman_low(self):
+        """Independent random specs -> Spearman ~0 -> passes_ordering False."""
+        from mrv.invariance import rep_invariance_validator
+
+        rng_a = np.random.RandomState(30)
+        rng_b = np.random.RandomState(31)
+        ac = {"a": rng_a.randn(400, 2), "b": rng_b.randn(400, 2)}
+        returns = np.random.RandomState(32).randn(400) * 0.01
+
+        def model_fn(f):
+            return (f[:, 0] > 0).astype(int)
+
+        r = rep_invariance_validator(model_fn, ac, returns=returns, K=2)
+        assert not r.passes_ordering["asset"]
+
     def test_passes_partition_consistent_with_mean_ari(self):
         """passes_partition must agree with mean_ari >= ARI_THRESHOLD."""
         from mrv.invariance import rep_invariance_validator
@@ -470,7 +501,7 @@ class TestSPY500CanonicalFixture:
             K=3,
         )
 
-    def test_result_not_none(self, spy_result):
+    def test_mean_ari_finite_and_min_le_mean(self, spy_result):
         # Structural / value checks: finite mean ARI, min <= mean.
         mean_ari = spy_result.mean_ari["asset"]
         min_ari = spy_result.min_ari["asset"]
@@ -542,6 +573,131 @@ class TestSPY500CanonicalFixture:
 # ---------------------------------------------------------------------------
 # Multi-spec stress test
 # ---------------------------------------------------------------------------
+
+
+class TestRepOrderingBoundary:
+    """T-A: pin the >= (inclusive) direction of the Spearman ordering gate."""
+
+    def _fake_results(self, mean_spearman):
+        import pandas as pd
+
+        ari_df = pd.DataFrame(
+            np.eye(2), index=["a", "b"], columns=["a", "b"]
+        )
+        return {
+            "SPY": {
+                "ari_matrix": ari_df,
+                "mean_ari": 0.90,
+                "min_ari": 0.90,
+                "mean_spearman": mean_spearman,
+                "n_specs": 2,
+                "n_obs": 100,
+            }
+        }
+
+    def test_ordering_pass_inclusive_at_threshold(self):
+        from mrv.validator.metrics import SPEARMAN_THRESHOLD
+        from mrv.validator.rep import RepValidator
+
+        v = RepValidator()
+        j_at = v._build_json(self._fake_results(SPEARMAN_THRESHOLD), ["a", "b"], {})
+        assert j_at["assets"]["SPY"]["ordering_pass"] is True
+        assert j_at["ordering_pass"] is True
+
+    def test_ordering_fail_one_epsilon_below(self):
+        from mrv.validator.metrics import SPEARMAN_THRESHOLD
+        from mrv.validator.rep import RepValidator
+
+        v = RepValidator()
+        j_below = v._build_json(
+            self._fake_results(SPEARMAN_THRESHOLD - 1e-9), ["a", "b"], {}
+        )
+        assert j_below["assets"]["SPY"]["ordering_pass"] is False
+        assert j_below["ordering_pass"] is False
+
+
+class TestRepCrossEntryPointEquality:
+    """T-P1b: functional rep_invariance_validator and pipeline.validate_rep run
+    the same RepValidator core, so identical labels must give identical numbers.
+    """
+
+    def test_functional_matches_pipeline_rep(self, tmp_path):
+        import mrv
+        import mrv.pipeline
+
+        rng = np.random.RandomState(321)
+        n = 200
+        la = rng.randint(0, 3, n)
+        lb = rng.randint(0, 3, n)
+        lc = rng.randint(0, 3, n)
+        returns = rng.randn(n) * 0.01
+        specs = {"rep_a": la, "rep_b": lb, "rep_c": lc}
+
+        # Functional entry point: passthrough model on the pre-computed labels.
+        func = mrv.rep_invariance_validator(
+            model_fn=lambda x: x,
+            admissible_class=specs,
+            returns=returns,
+            K=3,
+        )
+        # Pipeline CLI backend on the same labels + risk proxy.
+        cfg = {"validator": {"report_dir": str(tmp_path), "report_name": "t_{date}", "rep": {}}}
+        pipe = mrv.pipeline.validate_rep(
+            labels={"asset": specs},
+            risk_proxy={"asset": returns},
+            cfg=cfg,
+        )
+        pa = pipe["assets"]["asset"]
+
+        # Per-asset mean ARI / mean Spearman agree to 1e-12.
+        assert func.mean_ari["asset"] == pytest.approx(pa["mean_ari"], abs=1e-12)
+        func_pair_orderings = [
+            v for v in func.ordering_per_pair["asset"].values() if np.isfinite(v)
+        ]
+        assert float(np.mean(func_pair_orderings)) == pytest.approx(
+            pa["mean_spearman"], abs=1e-12
+        )
+
+        # A specific per-pair ARI agrees to 1e-12 with the pipeline's matrix.
+        ari_df = pa["ari_matrix"]
+        pair = ("rep_a", "rep_b")
+        assert func.ari_per_pair["asset"][pair] == pytest.approx(
+            float(ari_df.loc["rep_a", "rep_b"]), abs=1e-12
+        )
+
+
+class TestRepOrderingReadBack:
+    """T-P2b: the per-pair ordering value must be the independently-computed
+    Spearman ordering_consistency, not a value misread from the ARI matrix or a
+    transposed cell.
+    """
+
+    def test_ordering_per_pair_matches_independent_ordering_consistency(self):
+        from mrv.invariance import rep_invariance_validator
+        from mrv.validator.metrics import ordering_consistency
+
+        rng = np.random.RandomState(202)
+        n = 240
+        la = rng.randint(0, 3, n)
+        lb = rng.randint(0, 3, n)
+        returns = rng.randn(n)
+        specs = {"rep_a": la, "rep_b": lb}
+
+        r = rep_invariance_validator(
+            model_fn=lambda x: x, admissible_class=specs, returns=returns, K=3
+        )
+        pair = ("rep_a", "rep_b")
+        expected = ordering_consistency(la, lb, returns)
+        got = r.ordering_per_pair["asset"][pair]
+        assert got == pytest.approx(expected, abs=1e-9)
+
+        # Single pair: mean of finite orderings equals that pair's value.
+        finite = [v for v in r.ordering_per_pair["asset"].values() if np.isfinite(v)]
+        assert float(np.mean(finite)) == pytest.approx(expected, abs=1e-9)
+
+        # Guard against an ARI-matrix misread: ordering must NOT equal the pair's
+        # ARI here (the two metrics differ on this fixture).
+        assert abs(got - r.ari_per_pair["asset"][pair]) > 1e-6
 
 
 class TestRepValidatorMultiSpec:

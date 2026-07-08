@@ -25,6 +25,7 @@ from urllib.request import Request, urlopen
 
 import pandas as pd
 
+from mrv.exceptions import MrvConfigError
 from mrv.utils.config import load
 from mrv.utils.log import setup
 
@@ -68,7 +69,7 @@ def monitor(
         If ``validator`` is not ``"rep"``.
     """
     if validator != "rep":
-        raise ValueError(
+        raise MrvConfigError(
             f"monitor() only supports validator='rep'. "
             f"Got '{validator}'. For resolution invariance monitoring, "
             f"call validate_res(labels=...) directly and maintain your own "
@@ -134,7 +135,7 @@ def monitor(
     }
 
 
-# ── History management ───────────────────────────────────────────────────────
+# -- History management -------------------------------------------------------
 
 def _load_history(path: Path) -> pd.DataFrame:
     """Load or create empty history DataFrame."""
@@ -220,7 +221,7 @@ def _compute_rolling_stats(history: pd.DataFrame) -> None:
         history.loc[idx, "delta_vs_baseline"] = (ari_values - baseline).round(6)
 
 
-# ── Alerting ─────────────────────────────────────────────────────────────────
+# -- Alerting -----------------------------------------------------------------
 
 def _check_alerts(
     new_rows: pd.DataFrame,

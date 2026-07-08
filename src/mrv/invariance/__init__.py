@@ -25,7 +25,7 @@ Representation invariance (Paper 1)::
     print(result.null_1_over_K)
 
     Source: Paper 1 (Zheng, Low & Wang, 2026)
-      - ARI: Table 2 (cross-representation ARI, Adjusted Rand Index metric)
+      - ARI: Table 3 (cross-representation ARI, Adjusted Rand Index metric)
       - Matching-free ordering: posthoc_rank_aligned_ordering.py, Supplement app:ordering
       - 1/K null: Supplement app:ordering, text around Table 3
 
@@ -45,16 +45,22 @@ Resolution invariance (Paper 2)::
     result.summary()
     print(result.ari_matrix["SPY"])         # cross-freq ARI DataFrame
     print(result.ami_matrix["SPY"])         # cross-freq AMI DataFrame
-    print(result.within_intraday_excess)    # {asset: intraday_ARI - overall_ARI}
+    print(result.intraday_overall_ari_gap)  # {asset: intraday_ARI - overall_ARI}
     print(result.perm_pvalue)               # permutation p-values
 
     Source: Paper 2 (Zheng, Low & Wang, 2026)
-      - Cross-frequency ARI matrix: Table 2 / Table S1
-      - AMI matrix: Supplement S.2 robustness tables
-      - within_intraday_excess: sim_dgp.py SimReplicationResult docstring
-        (intraday_mean_ari - overall_mean_ari)
+      - Cross-frequency ARI matrix: main Table 1 / Table S1
+      - AMI: reported as a per-asset column in main Table 1; the full
+        cross-frequency AMI matrix here is a library extension, not a paper
+        artefact.
+      - intraday_overall_ari_gap: intraday-only mean off-diag ARI minus the
+        overall 4-freq mean off-diag ARI (an intraday-vs-daily agreement gap on
+        the same data). This library field is NOT Paper 2's simulated-baseline
+        "within-intraday excess"; it does not reproduce the paper's +0.03 to
+        +0.24 figure.
 """
 
+from mrv.exceptions import MrvConfigError, MrvError, MrvValidationError
 from mrv.invariance.rep import (
     RepInvarianceResult,
     rep_invariance_validator,
@@ -68,6 +74,10 @@ from mrv.invariance.res import (
 )
 
 __all__ = [
+    # Exceptions
+    "MrvError",
+    "MrvValidationError",
+    "MrvConfigError",
     # Paper 1
     "RepInvarianceResult",
     "rep_invariance_validator",

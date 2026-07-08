@@ -9,7 +9,7 @@ Usage:
     mrv init                         # scaffold a config.yaml in current dir
 
 Resolution invariance (Paper 2) is labels-first: fit your own regime models at
-each frequency and call ``mrv.validate_res(labels=...)`` from the Python API.
+each frequency and call ``mrv.pipeline.validate_res(labels=...)`` from the Python API.
 """
 
 from __future__ import annotations
@@ -53,18 +53,26 @@ def _run_report(cfg):
 
 
 def _run_all(cfg):
-    """Run rep + report (resolution invariance is labels-first via the Python API)."""
+    """Run rep + report (resolution invariance is labels-first via the Python API).
+
+    Returns ``True`` only if every step succeeds. A failed step is logged as an
+    error and the run continues, but the aggregate status is reported back so the
+    CLI can exit non-zero (a green CI on a broken run is worse than a loud fail).
+    """
     steps = [
         ("Step 1/2: Representation Invariance", _run_rep),
         ("Step 2/2: Report", _run_report),
     ]
+    ok = True
     for label, fn in steps:
         print(f"=== {label} ===")
         try:
             fn(cfg)
         except Exception as exc:
-            logger.warning("%s failed: %s", label, exc)
+            logger.error("%s failed: %s", label, exc)
+            ok = False
     print("=== Done ===")
+    return ok
 
 
 _VALIDATORS = {
@@ -87,7 +95,7 @@ def _cmd_init(args):
 
 
 def _cmd_run(args):
-    """Run validations."""
+    """Run validations. Returns a process exit code (0 = success)."""
     from mrv.utils.config import load
     from mrv.utils.log import setup
     cfg = load(args.config)
@@ -97,10 +105,10 @@ def _cmd_run(args):
         fn = _VALIDATORS.get(args.validator)
         if fn is None:
             print(f"Unknown validator: {args.validator}. Choose from: {', '.join(_VALIDATORS)}")
-            return
+            return 1
         fn(cfg)
-    else:
-        _run_all(cfg)
+        return 0
+    return 0 if _run_all(cfg) else 1
 
 
 def _cmd_download(args):
@@ -136,13 +144,14 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     if args.command == "run":
-        _cmd_run(args)
+        return _cmd_run(args)
     elif args.command == "download":
         _cmd_download(args)
     elif args.command == "init":
         _cmd_init(args)
     else:
         parser.print_help()
+    return 0
 
 
 if __name__ == "__main__":

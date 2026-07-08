@@ -1,11 +1,14 @@
 """
 mrv.invariance.rep -- High-level representation invariance API (Paper 1).
 
-Wraps mrv.validator.RepValidator with a functional interface and a typed
-result object so callers do not need to understand the validator config layer.
+Provides a typed functional interface that delegates to
+mrv.validator.RepValidator (the single orchestration) so callers do not need
+to understand the validator config layer.  The pairwise ARI and Spearman
+ordering matrices are read back from the validator result; this wrapper does
+not recompute ordering separately.
 
 Source: Paper 1 (Zheng, Low & Wang, 2026)
-  - ARI: Table 2 (cross-representation ARI, Adjusted Rand Index metric)
+  - ARI: Table 3 (cross-representation ARI, Adjusted Rand Index metric)
   - Matching-free ordering: posthoc_rank_aligned_ordering.py, Supplement app:ordering
   - 1/K null: Supplement app:ordering, text around Table 3
 """
@@ -17,6 +20,7 @@ from typing import Callable, Dict, Optional
 
 import numpy as np
 
+from mrv.exceptions import MrvValidationError
 from mrv.validator.metrics import ARI_THRESHOLD, SPEARMAN_THRESHOLD
 
 # ---------------------------------------------------------------------------
@@ -41,13 +45,24 @@ class RepInvarianceResult:
     min_ari : dict
         ``{asset_name: float}`` -- minimum pairwise ARI per asset.
     null_1_over_K : float
-        ``1 / K`` -- the ordering null under random assignment of K states.
+        ``1 / K`` -- the pointwise-agreement null: the expected fraction of
+        observations on which two independent uniform K-partitions assign the
+        same rank-aligned state (Paper 1 Supplement app:ordering). This is the
+        null for pointwise agreement, NOT the Spearman ordering gate (whose
+        null is 0).
     K : int
         Number of states passed by the caller.
     ari_threshold : float
-        Library threshold for "acceptable partition recovery" (Steinley 2004).
+        Library-default threshold for "acceptable partition recovery"
+        (Steinley 2004), surfaced here for reference. It is the module constant
+        ``mrv.validator.metrics.ARI_THRESHOLD``; the functional validator takes
+        no per-call threshold argument, so ``passes_partition`` always uses it.
     spearman_threshold : float
-        Library threshold for stable ordinal risk ordering.
+        Library-default threshold for stable ordinal risk ordering, surfaced
+        here for reference. It is the module constant
+        ``mrv.validator.metrics.SPEARMAN_THRESHOLD``; the functional validator
+        takes no per-call threshold argument, so ``passes_ordering`` always
+        uses it.
     passes_partition : dict
         ``{asset_name: bool}`` -- True iff mean ARI >= ari_threshold.
     passes_ordering : dict
@@ -114,7 +129,7 @@ def rep_invariance_validator(
     RepInvarianceResult
     """
     if len(admissible_class) < 2:
-        raise ValueError(
+        raise MrvValidationError(
             "rep_invariance_validator: admissible_class must have >= 2 specifications"
         )
 
@@ -138,26 +153,23 @@ def rep_invariance_validator(
     )
     asset_result = raw["assets"][asset_name]
     ari_df = asset_result["ari_matrix"]
+    # Per-pair ordering (Spearman) is computed once inside RepValidator; read
+    # it back here rather than recomputing, so there is a single ordering
+    # computation. When ``returns`` is None the validator leaves the
+    # off-diagonal as NaN, which is the documented "no ordering" result.
+    sp_df = asset_result["spearman_matrix"]
     spec_names = list(labels.keys())
 
-    # Build per-pair dicts.
+    # Build per-pair dicts from the validator's matrices.
     ari_pairs: Dict[tuple[str, str], float] = {}
     ordering_pairs: Dict[tuple[str, str], float] = {}
-    # No direct sp_mat in raw result -- recompute ordering per pair below.
     for i, sa in enumerate(spec_names):
         for j, sb in enumerate(spec_names):
             if j <= i:
                 continue
             pair = (sa, sb)
             ari_pairs[pair] = float(ari_df.loc[sa, sb])
-            ordering_pairs[pair] = float("nan")
-            if returns is not None:
-                from mrv.validator.metrics import ordering_consistency
-                nc = min(len(labels[sa]), len(labels[sb]), len(returns))
-                sp_val = ordering_consistency(
-                    labels[sa][:nc], labels[sb][:nc], returns[:nc]
-                )
-                ordering_pairs[pair] = sp_val
+            ordering_pairs[pair] = float(sp_df.loc[sa, sb])
 
     mean_ari_val = asset_result["mean_ari"]
     min_ari_val = asset_result["min_ari"]

@@ -1,7 +1,11 @@
 # mrv-lib Public API Contract
 
-Version: 0.6.1
-Stability: **Stable** -- all symbols listed here follow the Semantic Versioning contract below.
+Version: 0.7.0 (unreleased; last PyPI release 0.6.1)
+Stability: **Stable** -- every symbol listed here follows the Semantic Versioning
+contract below. 0.7.0 carries one breaking change: the
+`ResInvarianceResult.within_intraday_excess` attribute is renamed to
+`intraday_overall_ari_gap` (see the Removed / renamed table and the
+`[0.7.0]` section of `CHANGELOG.md`).
 
 ---
 
@@ -23,7 +27,11 @@ before the version tag is cut.
 
 ---
 
-## Top-level namespace (`mrv`)
+## The public Python API: top-level namespace (`mrv`)
+
+The recommended public Python contract is the top-level functional API. Import
+`mrv` and call the invariance validators directly; they return typed result
+objects.
 
 ```python
 import mrv
@@ -32,26 +40,27 @@ import mrv
 | Symbol | Kind | Since |
 |---|---|---|
 | `mrv.__version__` | `str` | 0.1.0 |
-| `mrv.report` | function | 0.2.0 |
-| `mrv.RepInvarianceResult` | dataclass | 0.6.0 |
 | `mrv.rep_invariance_validator` | function | 0.6.0 |
-| `mrv.ResInvarianceResult` | dataclass | 0.6.0 |
-| `mrv.ResolutionSpec` | dataclass | 0.6.0 |
 | `mrv.res_invariance_validator` | function | 0.6.0 |
+| `mrv.report` | function | 0.2.0 |
+| `mrv.ResolutionSpec` | dataclass | 0.6.0 |
+| `mrv.RepInvarianceResult` | dataclass | 0.6.0 |
+| `mrv.ResInvarianceResult` | dataclass | 0.6.0 |
 | `mrv.PAPER2_FREQS` | `tuple[str, ...]` | 0.6.0 |
 | `mrv.PAPER2_INTRADAY_FREQS` | `tuple[str, ...]` | 0.6.0 |
+| `mrv.MrvError` | exception (base for all mrv errors) | 0.7.0 |
+| `mrv.MrvValidationError` | exception (invalid validator input; also `ValueError`) | 0.7.0 |
+| `mrv.MrvConfigError` | exception (invalid configuration; also `ValueError`) | 0.7.0 |
 
----
+These same symbols are also re-exported from `mrv.invariance`.
 
-## `mrv.invariance` -- Invariance API
+### Exception hierarchy
 
-```python
-from mrv.invariance import (
-    rep_invariance_validator, RepInvarianceResult,
-    res_invariance_validator, ResInvarianceResult, ResolutionSpec,
-    PAPER2_FREQS, PAPER2_INTRADAY_FREQS,
-)
-```
+`MrvError` is the base class for all library-raised errors, so downstream code
+can `except mrv.MrvError` to catch them in one place. The concrete subclasses
+also inherit from the builtin they replace (`MrvValidationError` and
+`MrvConfigError` are both `ValueError`), so existing `except ValueError` code
+keeps working -- adding the hierarchy is backward-compatible.
 
 ### `rep_invariance_validator(model_fn, admissible_class, ...) -> RepInvarianceResult`
 
@@ -62,6 +71,9 @@ Parameters (stable):
 - `admissible_class: dict[str, np.ndarray]` -- at least 2 specifications.
 - `returns: np.ndarray = None`
 - `K: int = 2`
+
+To pass pre-computed labels directly, use a passthrough model:
+`model_fn=lambda x: x` with the labels as `admissible_class` values.
 
 ### `res_invariance_validator(model_fn, resolution_set, ...) -> ResInvarianceResult`
 
@@ -75,50 +87,87 @@ Parameters (stable):
 - `n_perm: int = 500`
 - `seed: int = 42`
 
+To pass pre-computed labels directly, use a passthrough model:
+`model_fn=lambda s: s` with pre-labelled Series as `resolution_set` values.
+
+### `report(json_path, template=None, cfg=None) -> Path | None`
+
+Renders a representation or resolution result JSON to a report. The `.tex` is
+always written; the PDF is compiled only when `pdflatex` is available on `PATH`.
+
 ### `ResolutionSpec` dataclass
 
 - `freqs: tuple[str, ...] = PAPER2_FREQS`
 - `intraday_freqs: tuple[str, ...] = None` (defaults to all non-"1d" freqs)
 
+### `RepInvarianceResult` dataclass
+
+Typed representation-invariance result. Per-asset attributes are dicts keyed by
+asset name. Full public attribute contract:
+
+- `ari_per_pair: dict[str, dict[tuple[str, str], float]]`
+- `ordering_per_pair: dict[str, dict[tuple[str, str], float]]`
+- `mean_ari: dict[str, float]`
+- `min_ari: dict[str, float]`
+- `null_1_over_K: float`
+- `K: int`
+- `ari_threshold: float`
+- `spearman_threshold: float`
+- `passes_partition: dict[str, bool]`
+- `passes_ordering: dict[str, bool]`
+- `summary() -> str`
+
+### `ResInvarianceResult` dataclass
+
+Typed resolution-invariance result. Per-asset attributes are dicts keyed by
+asset name. Full public attribute contract:
+
+- `ari_matrix: dict[str, pd.DataFrame]`
+- `ami_matrix: dict[str, pd.DataFrame]`
+- `overall_mean_ari: dict[str, float | None]`
+- `intraday_mean_ari: dict[str, float | None]`
+- `intraday_overall_ari_gap: dict[str, float | None]`
+- `passes_partition: dict[str, bool]`
+- `ari_threshold: float`
+- `freqs: tuple[str, ...]`
+- `intraday_freqs: tuple[str, ...]`
+- `perm_pvalue: dict[str, float | None]`
+- `perm_null_ci: dict[str, tuple[float, float] | None]`
+- `summary() -> str`
+
 ---
 
-## `mrv.validator` -- Validators
+## Internal / CLI backend (not the recommended user API; may change)
+
+The symbols below remain importable and power the `mrv run` config-file
+workflow, but they are **not** the recommended public Python API. Prefer the
+top-level validators above. These labels-first entry points and validator
+classes are documented here for completeness and may change without a MAJOR
+bump.
+
+### `mrv.pipeline` -- pipeline convenience API (CLI backend)
+
+```python
+from mrv.pipeline import validate_rep, validate_res, report, run, download, validate
+```
+
+- `validate_rep(labels, risk_proxy=None, prices=None, cfg=None, impact_fn=None) -> dict`
+- `validate_res(labels, event_window=None, calm_window=None, cfg=None, impact_fn=None) -> dict`
+- `report(json_path, template=None, cfg=None) -> Path | None`
+- `download(config=None, cfg=None) -> dict`
+- `run(config=None, validator="rep", cfg=None, impact_fn=None) -> Path | None`
+- `validate(config=None, validator="rep", cfg=None, impact_fn=None) -> dict` -- dispatches a `rep` convenience run; the backend for `monitor()`. `validator="res"` raises: resolution invariance is labels-first and has no convenience/monitoring path (call `validate_res(labels=...)` directly).
+
+### `mrv.validator` -- validator classes (CLI backend)
 
 ```python
 from mrv.validator import BaseValidator, RepValidator, ResValidator
 from mrv.validator import generate_report
 ```
 
-### `RepValidator.validate(labels, risk_proxy=None, prices=None) -> dict`
-
-### `ResValidator.validate(labels, event_window=None, calm_window=None) -> dict`
-
-### `generate_report(json_path, template=None, cfg=None) -> Path | None`
-
-Renders both representation and resolution result JSON. The `.tex` is always
-written; the PDF is compiled only when `pdflatex` is available on `PATH`.
-
----
-
-## `mrv.pipeline` -- Pipeline Convenience API
-
-```python
-from mrv.pipeline import validate_rep, validate_res, report, run, download, validate
-```
-
-### `validate_rep(labels, risk_proxy=None, prices=None, cfg=None, impact_fn=None) -> dict`
-
-### `validate_res(labels, event_window=None, calm_window=None, cfg=None, impact_fn=None) -> dict`
-
-### `report(json_path, template=None, cfg=None) -> Path | None`
-
-### `download(config=None, cfg=None) -> dict`
-
-### `run(config=None, validator="rep", cfg=None, impact_fn=None) -> Path | None`
-
-### `validate(config=None, validator="rep", cfg=None, impact_fn=None) -> dict`
-
-Dispatches a convenience validation run by name; used internally by `monitor()`.
+- `RepValidator.validate(labels, risk_proxy=None, prices=None) -> dict`
+- `ResValidator.validate(labels, event_window=None, calm_window=None) -> dict`
+- `generate_report(json_path, template=None, cfg=None) -> Path | None` -- renders both representation and resolution result JSON (backs `mrv.report`).
 
 ---
 
@@ -181,14 +230,15 @@ from mrv.utils import load, get_data_dir, get_assets, setup_logging
 
 ---
 
-## Removed symbols
+## Removed / renamed symbols
 
-| Symbol | Removed in | Use instead |
+| Symbol | Removed / renamed in | Use instead |
 |---|---|---|
-| `mrv.sr26_2_report`, `mrv.pipeline.sr26_2_report` | 0.6.1 | `report` / `generate_report` |
-| `mrv.validator.generate_sr26_2_report` | 0.6.1 | `generate_report` |
-| `mrv.sr11_7_report`, `mrv.pipeline.sr11_7_report` | 0.6.1 | `report` / `generate_report` |
-| `mrv.validator.generate_sr11_7_report` | 0.6.1 | `generate_report` |
+| `ResInvarianceResult.within_intraday_excess` (attribute) | renamed 0.7.0 | `ResInvarianceResult.intraday_overall_ari_gap` |
+| `mrv.sr26_2_report`, `mrv.pipeline.sr26_2_report` | removed 0.6.1 | `report` / `generate_report` |
+| `mrv.validator.generate_sr26_2_report` | removed 0.6.1 | `generate_report` |
+| `mrv.sr11_7_report`, `mrv.pipeline.sr11_7_report` | removed 0.6.1 | `report` / `generate_report` |
+| `mrv.validator.generate_sr11_7_report` | removed 0.6.1 | `generate_report` |
 
 ---
 

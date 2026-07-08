@@ -14,6 +14,7 @@ from typing import Callable, Dict, Optional
 import numpy as np
 import pandas as pd
 
+from mrv.exceptions import MrvConfigError
 from mrv.models.gmm import fit_gmm
 from mrv.models.hmm import fit_hmm
 
@@ -38,7 +39,7 @@ def fit(
     """
     fn = _REGISTRY.get(model.lower())
     if fn is None:
-        raise ValueError(f"Unknown model '{model}'. Registered: {list(_REGISTRY.keys())}")
+        raise MrvConfigError(f"Unknown model '{model}'. Registered: {list(_REGISTRY.keys())}")
     K = kwargs.pop("K", n_states)   # allow callers to pass K= directly
     return fn(features, K=K, **kwargs)
 

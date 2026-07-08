@@ -1,20 +1,32 @@
 """
 mrv.invariance.res -- High-level resolution invariance API (Paper 2).
 
-Wraps mrv.validator.ResValidator with a functional interface and a typed
-result object.  Takes a model callable and a resolution-set spec; computes
-the cross-frequency ARI matrix, the AMI matrix, and the within-intraday
-excess metric introduced in Paper 2.
+Provides a typed functional interface that delegates to the shared
+ResValidator cross-frequency orchestration (mrv.validator.res.analyze_labels,
+the per-asset core that mrv.validator.ResValidator.validate runs) rather than
+re-implementing the alignment / metric / permutation pipeline.  Takes a model
+callable and a resolution-set spec; returns the cross-frequency ARI matrix,
+the AMI matrix, and an intraday-vs-daily ARI agreement gap
+(``intraday_overall_ari_gap``; see below).
 
 Source: Paper 2 (Zheng, Low & Wang, 2026)
-  - Cross-frequency ARI matrix: Table 2 / Table S1
-  - AMI matrix: Supplement S.2 robustness tables
-  - Intraday excess: sim_dgp.py intraday_mean_ari vs overall_mean_ari;
-    SimReplicationResult fields: ``overall_mean_ari`` (4-freq mean off-diag ARI,
-    5m/15m/1h/1d) and ``intraday_mean_ari`` (3-freq intraday-only, 5m/15m/1h).
-    within_intraday_excess = intraday_mean_ari - overall_mean_ari.
-    A positive value means intraday frequencies agree more with each other
-    than with the daily scale; Paper 2 finds this is the dominant failure mode.
+  - Cross-frequency ARI matrix: main Table 1 / Table S1
+  - AMI: Paper 2 reports AMI as a per-asset column in main Table 1; the full
+    cross-frequency AMI matrix computed here is a library extension, not a
+    paper artefact.
+  - intraday_overall_ari_gap = intraday_mean_ari - overall_mean_ari: the
+    intraday-only mean off-diagonal ARI minus the overall (4-frequency) mean
+    off-diagonal ARI, i.e. an intraday-vs-daily agreement gap measured on the
+    same data. The two operand fields (``overall_mean_ari``, 4-freq mean
+    off-diag ARI over 5m/15m/1h/1d; ``intraday_mean_ari``, 3-freq intraday-only
+    over 5m/15m/1h) correspond to the SimReplicationResult component fields of
+    the same name. A positive value means intraday frequencies agree more with
+    each other than with the daily scale. NOTE: this library field is NOT
+    Paper 2's headline "within-intraday excess", which the paper defines as the
+    empirical intraday ARI minus a simulated MS-Gaussian baseline of ~0.195
+    (giving +0.03 to +0.24). These are different quantities; the
+    ``intraday_overall_ari_gap`` field does not reproduce the paper's +0.03 to
+    +0.24 figure.
 
 Canonical resolution-set spec
 ------------------------------
@@ -32,13 +44,14 @@ from typing import Callable, Dict, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from mrv.exceptions import MrvValidationError
 from mrv.validator.metrics import ARI_THRESHOLD
 
 # ---------------------------------------------------------------------------
 # Canonical Paper 2 frequency sets
 # ---------------------------------------------------------------------------
 
-#: Default four-frequency panel (Paper 2 Table 2 panel).
+#: Default four-frequency panel (Paper 2 main Table 1 panel).
 # Source: Paper 2 src/core/config.py FREQS
 PAPER2_FREQS: Tuple[str, ...] = ("5m", "15m", "1h", "1d")
 
@@ -63,7 +76,7 @@ class ResolutionSpec:
         Labels must match the keys in the ``labels`` dict passed to
         :func:`res_invariance_validator`.
     intraday_freqs : tuple of str, optional
-        Subset of ``freqs`` to use for the within-intraday excess metric.
+        Subset of ``freqs`` to use for the intraday-vs-overall ARI gap metric.
         Defaults to all frequencies that are not ``"1d"``.
 
     Examples
@@ -83,14 +96,14 @@ class ResolutionSpec:
     def __post_init__(self) -> None:
         self.freqs = tuple(self.freqs)
         if len(self.freqs) < 2:
-            raise ValueError("ResolutionSpec: freqs must have >= 2 entries")
+            raise MrvValidationError("ResolutionSpec: freqs must have >= 2 entries")
         if self.intraday_freqs is None:
             self.intraday_freqs = tuple(f for f in self.freqs if f != "1d")
         else:
             self.intraday_freqs = tuple(self.intraday_freqs)
         for f in self.intraday_freqs:
             if f not in self.freqs:
-                raise ValueError(
+                raise MrvValidationError(
                     f"ResolutionSpec: intraday_freq {f!r} not in freqs {self.freqs}"
                 )
 
@@ -118,15 +131,25 @@ class ResInvarianceResult:
     intraday_mean_ari : dict
         ``{asset_name: float | None}`` -- mean off-diagonal ARI on the
         intraday-only frequency subset (omits pairs involving "1d").
-    within_intraday_excess : dict
-        ``{asset_name: float | None}`` -- ``intraday_mean_ari - overall_mean_ari``.
-        Positive when intraday frequencies agree more with each other than
-        with the daily scale; Paper 2's primary signature of resolution
-        invariance failure.
+    intraday_overall_ari_gap : dict
+        ``{asset_name: float | None}`` -- ``intraday_mean_ari - overall_mean_ari``:
+        the intraday-only mean off-diagonal ARI minus the overall (4-frequency)
+        mean off-diagonal ARI, an intraday-vs-daily agreement gap on the same
+        data. Positive when intraday frequencies agree more with each other than
+        with the daily scale. This library field is NOT Paper 2's
+        simulated-baseline "within-intraday excess" and does not reproduce the
+        paper's +0.03 to +0.24 figure.
     passes_partition : dict
-        ``{asset_name: bool}`` -- True iff overall_mean_ari >= ARI_THRESHOLD.
+        ``{asset_name: bool}`` -- True iff overall_mean_ari >= ari_threshold.
+        This is a library-provided convenience for the user, not a Paper 2
+        verdict: Paper 2 does not define a 0.65 (or any) ARI pass/fail cutoff.
     ari_threshold : float
-        Library threshold used for ``passes_partition`` (Steinley 2004 = 0.65).
+        The library-default ARI threshold used for ``passes_partition``,
+        surfaced here for reference. It is the module constant
+        ``mrv.validator.metrics.ARI_THRESHOLD`` (the library convention 0.65,
+        Steinley 2004 ARI-substantiality guideline, adopted by Paper 1). The
+        functional validator does not take a per-call threshold argument;
+        ``passes_partition`` always uses this default.
     freqs : tuple of str
         Frequency labels in the order they appear in the matrices.
     intraday_freqs : tuple of str
@@ -142,7 +165,7 @@ class ResInvarianceResult:
     ami_matrix: Dict[str, pd.DataFrame] = field(default_factory=dict)
     overall_mean_ari: Dict[str, Optional[float]] = field(default_factory=dict)
     intraday_mean_ari: Dict[str, Optional[float]] = field(default_factory=dict)
-    within_intraday_excess: Dict[str, Optional[float]] = field(default_factory=dict)
+    intraday_overall_ari_gap: Dict[str, Optional[float]] = field(default_factory=dict)
     passes_partition: Dict[str, bool] = field(default_factory=dict)
     ari_threshold: float = ARI_THRESHOLD
     freqs: Tuple[str, ...] = PAPER2_FREQS
@@ -160,7 +183,7 @@ class ResInvarianceResult:
         for asset in self.ari_matrix:
             mean_ari = self.overall_mean_ari.get(asset)
             intra = self.intraday_mean_ari.get(asset)
-            excess = self.within_intraday_excess.get(asset)
+            excess = self.intraday_overall_ari_gap.get(asset)
             status = "PASS" if self.passes_partition.get(asset) else "FAIL"
             pval = self.perm_pvalue.get(asset)
 
@@ -176,14 +199,14 @@ class ResInvarianceResult:
                 f"  {asset}:"
                 f"  overall_ARI={mean_ari:.3f} [{status}]"
                 f"  intraday_ARI={intra:.3f}"
-                f"  within_intraday_excess={excess_str}"
+                f"  intraday_overall_ari_gap={excess_str}"
                 f"  perm_p={pval_str}"
             )
         return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
-# Within-intraday excess helper
+# Intraday-vs-overall ARI gap helper
 # ---------------------------------------------------------------------------
 
 
@@ -305,13 +328,13 @@ def res_invariance_validator(
     intraday_freqs: Tuple[str, ...] = spec.intraday_freqs
 
     if not resolution_set:
-        raise ValueError("res_invariance_validator: resolution_set is empty")
+        raise MrvValidationError("res_invariance_validator: resolution_set is empty")
 
     # 1. Apply model_fn to produce label Series for each (asset, freq).
     labels: Dict[str, Dict[str, pd.Series]] = {}
     for asset_name, freq_inputs in resolution_set.items():
         if len(freq_inputs) < 2:
-            raise ValueError(
+            raise MrvValidationError(
                 f"res_invariance_validator: asset '{asset_name}' has "
                 f"{len(freq_inputs)} frequency(ies), need >= 2"
             )
@@ -323,8 +346,12 @@ def res_invariance_validator(
             asset_labels[freq] = raw.astype(int)
         labels[asset_name] = asset_labels
 
-    # 2. Delegate to ResValidator (handles alignment + matrix computation).
-    from mrv.validator.res import align_labels_to_finest, compute_all_metrics
+    # 2. Delegate to the shared ResValidator cross-frequency orchestration.
+    #    ``analyze_labels`` is the per-asset core that ResValidator.validate
+    #    loops over (alignment + ARI/AMI matrices + permutation). Routing the
+    #    functional API through it keeps a single orchestration implementation
+    #    instead of re-running align + compute_all_metrics + permute here.
+    from mrv.validator.res import analyze_labels
 
     result_ari: Dict[str, pd.DataFrame] = {}
     result_ami: Dict[str, pd.DataFrame] = {}
@@ -336,13 +363,20 @@ def res_invariance_validator(
     result_ci: Dict[str, Optional[Tuple[float, float]]] = {}
 
     for asset_name, freq_labels in labels.items():
-        aligned = align_labels_to_finest(freq_labels)
+        analysis = analyze_labels(
+            asset_name,
+            freq_labels,
+            run_permutation=run_permutation,
+            n_perm=n_perm,
+            seed=seed,
+            compute_daily=False,  # wrapper only needs the matrices + permutation
+        )
+        ari_df = analysis["ari_matrix"]
+        ami_df = analysis["ami_matrix"]
 
-        # Full matrix.
-        metrics = compute_all_metrics(aligned)
-        ari_df = metrics["ari"]
-        ami_df = metrics["ami"]
-
+        # Derive the intraday-only mean ARI and the intraday-vs-overall gap
+        # cheaply from the core's ARI matrix. These are lightweight summaries
+        # of the orchestration output, not a second pipeline run.
         overall = _mean_offdiag(ari_df)
         intraday = _intraday_mean_ari(ari_df, intraday_freqs)
         if overall is not None and intraday is not None:
@@ -350,13 +384,8 @@ def res_invariance_validator(
         else:
             excess = None
 
-        pval: Optional[float] = None
-        ci: Optional[Tuple[float, float]] = None
-        if run_permutation:
-            from mrv.validator.res import permute_pvalue_mean_offdiag_ari
-            pval, ci = permute_pvalue_mean_offdiag_ari(
-                aligned, n_perm=n_perm, seed=seed
-            )
+        pval: Optional[float] = analysis["overall_mean_ari_pvalue_perm"]
+        ci: Optional[Tuple[float, float]] = analysis["overall_mean_ari_null_ci"]
 
         result_ari[asset_name] = ari_df
         result_ami[asset_name] = ami_df
@@ -369,16 +398,33 @@ def res_invariance_validator(
         result_pval[asset_name] = pval
         result_ci[asset_name] = ci
 
+    # Report the frequencies actually present in the computed matrices, which
+    # may be fewer than spec.freqs when the caller supplies a smaller
+    # resolution_set than the default 4-panel spec. Fall back to spec.freqs
+    # only when no matrix was produced.
+    actual_freqs: Tuple[str, ...] = spec.freqs
+    for _asset_ari in result_ari.values():
+        if _asset_ari is not None and not _asset_ari.empty:
+            actual_freqs = tuple(_asset_ari.columns)
+            break
+
+    # Narrow the reported intraday_freqs to those actually present in the
+    # computed matrices, so a smaller resolution_set than the default 4-panel
+    # spec does not report intraday frequencies that were never used.
+    actual_intraday_freqs: Tuple[str, ...] = tuple(
+        f for f in intraday_freqs if f in actual_freqs
+    )
+
     return ResInvarianceResult(
         ari_matrix=result_ari,
         ami_matrix=result_ami,
         overall_mean_ari=result_overall,
         intraday_mean_ari=result_intraday,
-        within_intraday_excess=result_excess,
+        intraday_overall_ari_gap=result_excess,
         passes_partition=result_passes,
         ari_threshold=ARI_THRESHOLD,
-        freqs=spec.freqs,
-        intraday_freqs=intraday_freqs,
+        freqs=actual_freqs,
+        intraday_freqs=actual_intraday_freqs,
         perm_pvalue=result_pval,
         perm_null_ci=result_ci,
     )

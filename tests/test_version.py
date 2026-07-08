@@ -3,4 +3,4 @@
 
 def test_version():
     import mrv
-    assert mrv.__version__ == "0.6.1"
+    assert mrv.__version__ == "0.7.0"

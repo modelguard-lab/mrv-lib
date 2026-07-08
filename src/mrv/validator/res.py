@@ -32,6 +32,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import adjusted_mutual_info_score, adjusted_rand_score
 
+from mrv.exceptions import MrvValidationError
 from mrv.validator.base import BaseValidator
 from mrv.validator.metrics import ARI_THRESHOLD
 from mrv.validator.metrics import variation_of_information as _vi_metric
@@ -39,12 +40,12 @@ from mrv.validator.metrics import variation_of_information as _vi_metric
 logger = logging.getLogger(__name__)
 
 
-# ── Constants ────────────────────────────────────────────────────────────────
+# -- Constants ----------------------------------------------------------------
 TZ = "America/New_York"
 DEFAULT_ROLLING_DAYS = 7
 
 
-# ── Alignment ────────────────────────────────────────────────────────────────
+# -- Alignment ----------------------------------------------------------------
 
 def align_labels_to_finest(
     labels_by_freq: Dict[str, pd.Series],
@@ -58,13 +59,23 @@ def align_labels_to_finest(
         return {}
     finest_key = max(labels_by_freq, key=lambda k: len(labels_by_freq[k]))
     finest_idx = labels_by_freq[finest_key].index
+    # Start the common index at the latest first-observation across
+    # frequencies, so no series is forward-filled from before its first real
+    # label. Otherwise the pre-first-observation rows have no ffill source and
+    # fillna(0) injects a spurious regime-0 head, biasing the cross-frequency
+    # ARI when the frequencies' start dates are staggered. With shared start
+    # dates this is a no-op.
+    starts = [ser.index.min() for ser in labels_by_freq.values() if len(ser)]
+    if starts and len(finest_idx):
+        common_start = max(starts)
+        finest_idx = finest_idx[finest_idx >= common_start]
     return {
         freq: ser.reindex(finest_idx, method="ffill").fillna(0).astype(int)
         for freq, ser in labels_by_freq.items()
     }
 
 
-# ── Metrics ──────────────────────────────────────────────────────────────────
+# -- Metrics ------------------------------------------------------------------
 
 def _resolve_index_subset(
     aligned: Dict[str, pd.Series],
@@ -162,7 +173,7 @@ def mean_offdiag(mat: pd.DataFrame) -> Optional[float]:
     return float(np.nanmean(offdiag)) if offdiag.size else None
 
 
-# ── Permutation Tests ────────────────────────────────────────────────────────
+# -- Permutation Tests --------------------------------------------------------
 
 def permute_pvalue_mean_offdiag_ari(
     aligned: Dict[str, pd.Series],
@@ -205,7 +216,7 @@ def permute_pvalue_mean_offdiag_ari(
     return p, ci
 
 
-# ── Window Subsetting ────────────────────────────────────────────────────────
+# -- Window Subsetting --------------------------------------------------------
 
 def subset_index_by_dates(
     index: pd.DatetimeIndex,
@@ -233,7 +244,7 @@ def subset_index_by_dates(
     return index[mask]
 
 
-# ── Daily & Rolling Summaries ────────────────────────────────────────────────
+# -- Daily & Rolling Summaries ------------------------------------------------
 
 def compute_daily_outputs(
     aligned: Dict[str, pd.Series],
@@ -312,7 +323,7 @@ def compute_daily_outputs(
     )
 
 
-# ── Visualization ────────────────────────────────────────────────────────────
+# -- Visualization ------------------------------------------------------------
 
 def _plot_timeline(aligned: Dict[str, pd.Series], asset_name: str, out_path: Path) -> None:
     """Gantt-style timeline: X=time, coloured by regime label."""
@@ -360,7 +371,7 @@ def _plot_timeline(aligned: Dict[str, pd.Series], asset_name: str, out_path: Pat
     plt.close()
 
 
-# ── Core Analysis ────────────────────────────────────────────────────────────
+# -- Core Analysis ------------------------------------------------------------
 
 def analyze_labels(
     asset_name: str,
@@ -368,8 +379,16 @@ def analyze_labels(
     rolling_days: int = DEFAULT_ROLLING_DAYS,
     event_window: Optional[Tuple[str, str]] = None,
     calm_window: Optional[Tuple[str, str]] = None,
+    run_permutation: bool = True,
+    n_perm: int = 500,
+    seed: int = 42,
+    compute_daily: bool = True,
 ) -> Dict[str, Any]:
     """Run cross-frequency analysis on pre-computed labels.
+
+    This is the single per-asset cross-frequency orchestration used by both
+    :meth:`ResValidator.validate` and the functional
+    :func:`mrv.invariance.res.res_invariance_validator` wrapper.
 
     Parameters
     ----------
@@ -382,6 +401,19 @@ def analyze_labels(
         Window for rolling ARI summary.
     event_window, calm_window : tuple of (start, end) date strings, optional
         If provided, compute ARI separately for event/calm periods.
+    run_permutation : bool, default True
+        Whether to compute the mean off-diagonal ARI permutation p-value / CI.
+        When False, ``overall_mean_ari_pvalue_perm`` and
+        ``overall_mean_ari_null_ci`` are returned as ``None``.
+    n_perm : int, default 500
+        Number of permutations for the permutation test (Paper 2 default).
+    seed : int, default 42
+        Random seed for the permutation test (Paper 2 default).
+    compute_daily : bool, default True
+        Whether to compute the daily and rolling-window ARI summaries.
+        The CLI/report path needs these; the functional wrapper does not,
+        so it passes ``False`` to skip the per-day work. When False the four
+        daily/rolling DataFrames are returned empty.
     """
     freqs = list(labels_by_freq.keys())
     aligned = align_labels_to_finest(labels_by_freq)
@@ -393,7 +425,10 @@ def analyze_labels(
     # Metrics
     all_metrics = compute_all_metrics(aligned)
     ari_df = all_metrics["ari"]
-    perm_p, perm_ci = permute_pvalue_mean_offdiag_ari(aligned, n_perm=500, seed=42)
+    if run_permutation:
+        perm_p, perm_ci = permute_pvalue_mean_offdiag_ari(aligned, n_perm=n_perm, seed=seed)
+    else:
+        perm_p, perm_ci = None, None
 
     # Event/calm windows
     first = next(iter(aligned.values()))
@@ -409,9 +444,12 @@ def analyze_labels(
         if len(calm_index):
             calm_ari_df = compute_ari_matrix(aligned, calm_index)
 
-    # Daily/rolling
-    daily_df, daily_pair_df, rolling_df, rolling_pair_df = compute_daily_outputs(
-        aligned, rolling_days=rolling_days)
+    # Daily/rolling (skipped when the caller does not need per-day summaries)
+    if compute_daily:
+        daily_df, daily_pair_df, rolling_df, rolling_pair_df = compute_daily_outputs(
+            aligned, rolling_days=rolling_days)
+    else:
+        daily_df = daily_pair_df = rolling_df = rolling_pair_df = pd.DataFrame()
 
     crisis_shares = {freq: float(100.0 * (aligned[freq] == 1).mean()) for freq in freqs}
 
@@ -429,6 +467,7 @@ def analyze_labels(
     return {
         "asset_name": asset_name,
         "frequencies": freqs,
+        "n_obs": int(len(fine_index)),
         "rolling_days": int(rolling_days),
         "ari_matrix": ari_df,
         "ami_matrix": all_metrics["ami"],
@@ -458,7 +497,7 @@ def analyze_labels(
     }
 
 
-# ── Validator Class ──────────────────────────────────────────────────────────
+# -- Validator Class ----------------------------------------------------------
 
 class ResValidator(BaseValidator):
     """Resolution Invariance validator.
@@ -490,11 +529,11 @@ class ResValidator(BaseValidator):
             ``(start_date, end_date)`` for calm-period analysis.
         """
         if not labels:
-            raise ValueError("labels dict is empty -- provide at least one asset")
+            raise MrvValidationError("labels dict is empty -- provide at least one asset")
 
         for asset, freqs in labels.items():
             if len(freqs) < 2:
-                raise ValueError(
+                raise MrvValidationError(
                     f"Asset '{asset}' has {len(freqs)} frequency(ies), need >= 2"
                 )
 
@@ -503,14 +542,14 @@ class ResValidator(BaseValidator):
         if event_window is None and res_cfg.get("event_window"):
             raw_ew = res_cfg["event_window"]
             if not (isinstance(raw_ew, (list, tuple)) and len(raw_ew) == 2):
-                raise ValueError(
+                raise MrvValidationError(
                     f"event_window must be a 2-element [start, end] list; got {raw_ew!r}"
                 )
             event_window = (str(raw_ew[0]), str(raw_ew[1]))
         if calm_window is None and res_cfg.get("calm_window"):
             raw_cw = res_cfg["calm_window"]
             if not (isinstance(raw_cw, (list, tuple)) and len(raw_cw) == 2):
-                raise ValueError(
+                raise MrvValidationError(
                     f"calm_window must be a 2-element [start, end] list; got {raw_cw!r}"
                 )
             calm_window = (str(raw_cw[0]), str(raw_cw[1]))
@@ -527,6 +566,7 @@ class ResValidator(BaseValidator):
 
             analysis = analyze_labels(
                 asset_name, freq_labels,
+                rolling_days=int(res_cfg.get("rolling_days", DEFAULT_ROLLING_DAYS)),
                 event_window=event_window,
                 calm_window=calm_window,
             )
@@ -575,7 +615,7 @@ class ResValidator(BaseValidator):
         self.results = all_results
         return {"run_dir": str(run_dir), "json_path": str(json_path), "assets": all_results}
 
-    # ── Internal helpers ─────────────────────────────────────────────────
+    # -- Internal helpers -------------------------------------------------
 
     def _save_asset_outputs(self, asset_name: str, analysis: Dict, run_dir: Path) -> None:
         """Save CSVs and plots for one asset."""
@@ -634,6 +674,7 @@ class ResValidator(BaseValidator):
             ari_df = r["ari_matrix"]
             assets_json[name] = {
                 "frequencies": r.get("frequencies", []),
+                "n_obs": r.get("n_obs", 0),
                 "overall_mean_ari": (
                     round(r["overall_mean_ari"], 6)
                     if r.get("overall_mean_ari") is not None else None

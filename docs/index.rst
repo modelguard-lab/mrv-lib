@@ -35,6 +35,12 @@ mrv-lib: Model Risk Validator
 mrv-lib is a pure Model Risk Validator library: you supply labels from your own
 models and mrv measures how stable they are across specification choices.
 
+The recommended public Python API is the top-level functional interface
+(:func:`mrv.rep_invariance_validator`, :func:`mrv.res_invariance_validator`,
+:func:`mrv.report`, and the typed results). See :doc:`quickstart` to get
+started. The config-file CLI (``mrv init`` / ``mrv download`` / ``mrv run``) is
+backed internally by :doc:`api/mrv.pipeline`.
+
 * **Representation invariance** (Paper 1): do regime labels change when you
   switch feature representations?
 * **Resolution invariance** (Paper 2): do labels agree across 5m/15m/1h/1d

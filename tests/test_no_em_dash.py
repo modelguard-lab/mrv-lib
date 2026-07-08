@@ -26,6 +26,7 @@ _THIS_FILE = pathlib.Path(__file__).resolve()
 _SCAN_GLOBS = [
     "src/**/*.py",
     "src/**/*.yaml",
+    "src/**/*.tex",
     "tests/**/*.py",
     "templates/**/*.tex",
     "examples/**/*.py",
@@ -35,6 +36,19 @@ _SCAN_GLOBS = [
     "*.toml",
     "*.cff",
 ]
+
+
+def _scanned_files() -> set[pathlib.Path]:
+    """Return the set of files the em-dash scan actually covers."""
+    seen: set[pathlib.Path] = set()
+    for pattern in _SCAN_GLOBS:
+        for path in _REPO_ROOT.glob(pattern):
+            if not path.is_file() or path in seen:
+                continue
+            if path.resolve() == _THIS_FILE:
+                continue
+            seen.add(path)
+    return seen
 
 
 def _collect_hits() -> list[tuple[pathlib.Path, int, str]]:
@@ -72,3 +86,12 @@ def test_no_em_dash_in_delivery_surfaces():
             "Replace each em-dash with a colon, semicolon, comma, or sentence split "
             "(P11). Do not use en-dash '--' as a substitute for prose separators."
         )
+
+
+def test_shipped_template_is_scanned():
+    """The shipped LaTeX report template (src/mrv/templates/template.tex) must
+    be inside the scanned set, so a future em-dash in it cannot slip past CI.
+    """
+    template = _REPO_ROOT / "src" / "mrv" / "templates" / "template.tex"
+    assert template.is_file(), f"expected shipped template at {template}"
+    assert template in _scanned_files()

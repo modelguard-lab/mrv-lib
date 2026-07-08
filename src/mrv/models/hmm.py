@@ -9,6 +9,13 @@ import numpy as np
 import pandas as pd
 
 # Default RNG seed for reproducible model fitting.
+#
+# NOTE ON SEED CONVENTION: model fitting defaults to seed 1, while the Paper 2
+# resolution permutation test defaults to seed 42 (see
+# ``mrv.invariance.res.res_invariance_validator``). This difference is
+# intentional: the two are independent knobs. The model-fit seed controls
+# sklearn/hmmlearn parameter initialisation; the permutation seed controls the
+# null-distribution shuffle. Overriding one does not affect the other.
 _DEFAULT_SEED = 1
 
 logger = logging.getLogger(__name__)

@@ -36,6 +36,7 @@ from typing import Any, Dict, Optional
 import numpy as np
 import pandas as pd
 
+from mrv.exceptions import MrvValidationError
 from mrv.validator.base import BaseValidator
 from mrv.validator.metrics import ARI_THRESHOLD, SPEARMAN_THRESHOLD, ari, ordering_consistency
 
@@ -76,11 +77,11 @@ class RepValidator(BaseValidator):
             impact computation (if ``impact_fn`` was set).
         """
         if not labels:
-            raise ValueError("labels dict is empty -- provide at least one asset")
+            raise MrvValidationError("labels dict is empty -- provide at least one asset")
 
         for asset, specs in labels.items():
             if len(specs) < 2:
-                raise ValueError(
+                raise MrvValidationError(
                     f"Asset '{asset}' has {len(specs)} specification(s), need >= 2"
                 )
 
@@ -138,6 +139,7 @@ class RepValidator(BaseValidator):
             n_obs = int(len(first_arr)) if first_arr is not None else 0
             asset_result = {
                 "ari_matrix": ari_mat,
+                "spearman_matrix": sp_mat,
                 "mean_ari": mean_ari, "min_ari": min_ari,
                 "mean_spearman": mean_sp,
                 "n_specs": n,

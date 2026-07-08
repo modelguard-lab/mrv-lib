@@ -86,6 +86,85 @@ class TestPipeline:
             validate(cfg=cfg, validator="__nonexistent__")
 
 
+class TestRepConvenienceRiskProxyAlignment:
+    """T-C: the convenience path must compute ordering/Spearman on the risk
+    proxy reindexed onto the post-normalize feature index, not on
+    ``vol.dropna().values`` (which starts at a different date and would
+    positionally misalign proxy vs labels).
+    """
+
+    def _write_ohlcv(self, path, n=400, seed=7):
+        rng = np.random.default_rng(seed)
+        dates = pd.bdate_range("2022-01-03", periods=n)
+        rets = rng.normal(0.0003, 0.012, n)
+        price = 100.0 * np.exp(np.cumsum(rets))
+        pd.DataFrame({"Close": price}, index=dates).to_csv(path, index_label="Date")
+
+    def _cfg(self, csv_path, report_dir):
+        return {
+            "validator": {
+                "report_dir": str(report_dir),
+                "report_name": "tc_{date}",
+                "rep": {
+                    "model": "gmm",
+                    "n_states": 3,
+                    "factors": [["vol", "var"], ["vol", "cvar"]],
+                    "assets": {"SPY": str(csv_path)},
+                },
+            },
+            "normalize": {"mode": "minmax", "window": 20},
+        }
+
+    def test_ordering_uses_reindexed_proxy(self, tmp_path):
+        pytest.importorskip("sklearn")
+        from mrv.data.factors import (
+            build_factors,
+            log_returns,
+            resolve_name,
+            volatility,
+        )
+        from mrv.data.normalize import normalize
+        from mrv.data.reader import load_ohlcv
+        from mrv.models import fit as fit_model
+        from mrv.pipeline import _run_rep_convenience
+        from mrv.validator.metrics import ordering_consistency
+
+        csv = tmp_path / "SPY.csv"
+        self._write_ohlcv(csv)
+        cfg = self._cfg(csv, tmp_path / "reports")
+
+        result = _run_rep_convenience(cfg)
+        mean_sp = result["assets"]["SPY"]["mean_spearman"]
+        assert np.isfinite(mean_sp)
+
+        # Reconstruct the reindexed-proxy computation by hand.
+        price = load_ohlcv(csv)["Close"]
+        vol = volatility(log_returns(price), window=20, annualize=False)
+        labels = []
+        idx0 = None
+        for fs in cfg["validator"]["rep"]["factors"]:
+            resolved = [resolve_name(f) for f in fs]
+            raw = build_factors(price, factors=resolved, cfg=cfg)
+            normed = normalize(raw, cfg=cfg).dropna()
+            labels.append(fit_model(normed, model="gmm", n_states=3))
+            if idx0 is None:
+                idx0 = normed.index
+
+        proxy_re = vol.reindex(idx0).values
+        la, lb = labels
+        nc = min(len(la), len(lb), len(proxy_re))
+        expected = ordering_consistency(la[:nc], lb[:nc], proxy_re[:nc])
+        assert mean_sp == pytest.approx(expected, abs=1e-9)
+
+        # The reindexed proxy differs from vol.dropna(): reverting the pipeline
+        # to ``vol.dropna().values`` would feed a positionally misaligned proxy
+        # into ordering_consistency, so this assertion pins the reindex.
+        proxy_dropna = vol.dropna().values
+        assert not np.allclose(
+            proxy_re[:nc], proxy_dropna[:nc], equal_nan=True
+        )
+
+
 class TestPipelineErrors:
     def test_validate_rep_empty_labels_raises(self):
         from mrv.pipeline import validate_rep

@@ -24,6 +24,8 @@ from typing import Any, Callable, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
+from mrv.exceptions import MrvValidationError
+
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -48,7 +50,7 @@ def log_returns(price: pd.Series) -> pd.Series:
     """Compute log returns. Raises ValueError on non-positive prices."""
     if (price <= 0).any():
         n_bad = int((price <= 0).sum())
-        raise ValueError(f"Non-positive prices detected ({n_bad} values).")
+        raise MrvValidationError(f"Non-positive prices detected ({n_bad} values).")
     return np.log(price / price.shift(1))
 
 
@@ -295,7 +297,7 @@ def build_factors(
     # Validate price series before any computation
     n_bad = int((price <= 0).sum())
     if n_bad > 0:
-        raise ValueError(
+        raise MrvValidationError(
             f"build_factors: price series contains {n_bad} non-positive value(s). "
             "All prices must be strictly positive for log-return computation."
         )

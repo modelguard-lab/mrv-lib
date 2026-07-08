@@ -119,7 +119,9 @@ and risk-ordering stability (Spearman rank correlation).
 \textbf{Layer} & \textbf{Value} & \textbf{Threshold} \\
 \midrule
 Mean ARI (partition)      & {{OVERALL_MEAN_ARI}}      & $\geq$ {{ARI_THRESHOLD}} \\
+%% IF_IS_REP
 Mean Spearman (ordering)  & {{OVERALL_MEAN_SPEARMAN}} & $\geq$ {{SPEARMAN_THRESHOLD}} \\
+%% ENDIF
 \bottomrule
 \end{tabular}
 \end{center}
@@ -167,16 +169,21 @@ Observations: {{N_OBS}} \quad$\cdot$\quad Specifications: {{N_FACTOR_SETS}}
 
 For each asset, the model is fitted independently under every admissible
 specification. Pairwise agreement between the resulting label assignments is
-measured with the Adjusted Rand Index (ARI); risk-ordering stability is
+measured with the Adjusted Rand Index (ARI).
+%% IF_IS_REP
+Risk-ordering stability is
 measured with a rank-aligned Spearman correlation against a risk proxy.
+%% ENDIF
 
 \begin{enumerate}[leftmargin=2em]
 \item \textbf{Partition layer:} mean off-diagonal ARI across specification
       pairs. A value $\geq$ {{ARI_THRESHOLD}} indicates acceptable partition
       recovery (Steinley, 2004).
+%% IF_IS_REP
 \item \textbf{Ordering layer:} mean Spearman correlation across specification
       pairs. A value $\geq$ {{SPEARMAN_THRESHOLD}} indicates a stable ordinal
       risk ranking even when categorical labels differ.
+%% ENDIF
 \end{enumerate}
 
 \noindent

@@ -59,6 +59,36 @@ class TestMetrics:
             np.array([0, 1, 2]), np.array([0, 1, 2]), np.array([1.0, 2.0, 3.0])
         ))
 
+    def test_ordering_consistency_all_nan_risk_returns_nan(self):
+        """F4: an all-NaN risk proxy has no ordering to measure -> NaN."""
+        from mrv.validator.metrics import ordering_consistency
+        np.random.seed(0)
+        labels_a = np.random.randint(0, 2, 100)
+        labels_b = np.random.randint(0, 2, 100)
+        features = np.full(100, np.nan)
+        assert np.isnan(ordering_consistency(labels_a, labels_b, features))
+
+    def test_ordering_consistency_masks_nan_rows(self):
+        """F4: NaN risk rows are dropped before ranking; the result equals the
+        clean-subset computation and is unaffected by injected NaN rows.
+        """
+        from mrv.validator.metrics import ordering_consistency
+        np.random.seed(1)
+        n = 120
+        features = np.random.randn(n)
+        labels = (features > 0).astype(int)
+        clean = ordering_consistency(labels, labels, features)
+
+        # Inject NaNs into the risk proxy at some rows; the dropped rows must
+        # not change the ranking outcome (still perfectly consistent).
+        feat_nan = features.copy()
+        feat_nan[::10] = np.nan
+        with_nan = ordering_consistency(labels, labels, feat_nan)
+        assert np.isfinite(with_nan)
+        assert with_nan == pytest.approx(clean, abs=0.05)
+        # Identical labels remain perfectly ordering-consistent despite NaNs.
+        assert with_nan == pytest.approx(1.0)
+
     def test_thresholds_exported(self):
         from mrv.validator.metrics import ARI_THRESHOLD, SPEARMAN_THRESHOLD
         assert ARI_THRESHOLD == 0.65

@@ -269,7 +269,7 @@ def _fetch_bars(
 # ---------------------------------------------------------------------------
 
 def download(cfg: Optional[Dict[str, Any]] = None) -> None:
-    """Download all assets × freqs from IB."""
+    """Download all assets x freqs from IB."""
     cfg = cfg or {}
     dl_cfg = cfg.get("download", {})
     assets = get_assets(cfg)
